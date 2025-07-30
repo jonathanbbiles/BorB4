@@ -6,4 +6,4 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
-    nodeVersion: 18
+    nodeVersion: 24.4.1
