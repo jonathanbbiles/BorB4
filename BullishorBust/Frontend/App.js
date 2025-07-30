@@ -53,7 +53,7 @@ const HEADERS = {
 // When running on a real device "localhost" will not resolve to your
 // development machine. Use an Expo or ngrok tunnel URL instead.
 const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://your-expo-url.ngrok-free.app';
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://abc123.ngrok-free.app'; // <-- updated
 
 // Buffer the sell price to offset taker fees while keeping the profit target
 const FEE_BUFFER = 0.0025; // 0.25% taker fee
@@ -147,6 +147,10 @@ export default function App() {
   const [alpacaOk, setAlpacaOk] = useState(null);
   const [backendOk, setBackendOk] = useState(null);
   const intervalRef = useRef(null);
+
+  useEffect(() => {
+    console.log(`\uD83D\uDD01 Using backend: ${BACKEND_URL}`);
+  }, []);
 
   // Manual buy handler that sends a request to the backend /buy endpoint
   const manualBuy = async (token) => {
