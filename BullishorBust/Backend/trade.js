@@ -1,13 +1,15 @@
+require('dotenv').config();
 const axios = require('axios');
 
-const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
-const DATA_URL = 'https://data.alpaca.markets/v1beta2';
 const API_KEY = process.env.ALPACA_API_KEY;
 const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
+const BASE_URL = 'https://paper-api.alpaca.markets';
+const DATA_URL = 'https://data.alpaca.markets/v1beta2';
 
-const HEADERS = {
+const headers = {
   'APCA-API-KEY-ID': API_KEY,
   'APCA-API-SECRET-KEY': SECRET_KEY,
+  'Content-Type': 'application/json',
 };
 
 // Offsets taker fees when calculating profit target
@@ -23,7 +25,7 @@ function sleep(ms) {
 async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   // submit the limit buy order
   const buyRes = await axios.post(
-    `${ALPACA_BASE_URL}/orders`,
+    `${BASE_URL}/v2/orders`,
     {
       symbol,
       qty,
@@ -33,7 +35,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
       time_in_force: 'gtc',
       limit_price: limitPrice,
     },
-    { headers: HEADERS }
+    { headers }
   );
 
   const buyOrder = buyRes.data;
@@ -41,8 +43,8 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   // poll until the order is filled
   let filledOrder = buyOrder;
   for (let i = 0; i < 20; i++) {
-    const check = await axios.get(`${ALPACA_BASE_URL}/orders/${buyOrder.id}`, {
-      headers: HEADERS,
+    const check = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
+      headers,
     });
     filledOrder = check.data;
     if (filledOrder.status === 'filled') break;
@@ -58,7 +60,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   const sellPrice = roundPrice(avgPrice * (1 + TOTAL_MARKUP));
 
   const sellRes = await axios.post(
-    `${ALPACA_BASE_URL}/orders`,
+    `${BASE_URL}/v2/orders`,
     {
       symbol,
       qty: filledOrder.filled_qty,
@@ -68,7 +70,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
       time_in_force: 'gtc',
       limit_price: sellPrice,
     },
-    { headers: HEADERS }
+    { headers }
   );
 
   return { buy: filledOrder, sell: sellRes.data };
@@ -78,7 +80,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
 async function getLatestPrice(symbol) {
   const res = await axios.get(
     `${DATA_URL}/crypto/latest/trades?symbols=${symbol}`,
-    { headers: HEADERS }
+    { headers }
   );
   const trade = res.data.trades && res.data.trades[symbol];
   if (!trade) throw new Error(`Price not available for ${symbol}`);
@@ -87,7 +89,7 @@ async function getLatestPrice(symbol) {
 
 // Get portfolio value and buying power from the Alpaca account
 async function getAccountInfo() {
-  const res = await axios.get(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
+  const res = await axios.get(`${BASE_URL}/v2/account`, { headers });
   const portfolioValue = parseFloat(res.data.portfolio_value);
   const buyingPower = parseFloat(res.data.buying_power);
   return {
@@ -130,7 +132,7 @@ async function placeMarketBuyThenSell(symbol) {
   }
 
   const buyRes = await axios.post(
-    `${ALPACA_BASE_URL}/orders`,
+    `${BASE_URL}/v2/orders`,
     {
       symbol,
       qty,
@@ -138,7 +140,7 @@ async function placeMarketBuyThenSell(symbol) {
       type: 'market',
       time_in_force: 'gtc',
     },
-    { headers: HEADERS }
+    { headers }
   );
 
   const buyOrder = buyRes.data;
@@ -146,8 +148,8 @@ async function placeMarketBuyThenSell(symbol) {
   // Wait for fill
   let filled = buyOrder;
   for (let i = 0; i < 20; i++) {
-    const chk = await axios.get(`${ALPACA_BASE_URL}/orders/${buyOrder.id}`, {
-      headers: HEADERS,
+    const chk = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
+      headers,
     });
     filled = chk.data;
     if (filled.status === 'filled') break;
@@ -168,7 +170,7 @@ async function placeMarketBuyThenSell(symbol) {
 
   try {
     const sellRes = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty: filled.filled_qty,
@@ -177,7 +179,7 @@ async function placeMarketBuyThenSell(symbol) {
         time_in_force: 'gtc',
         limit_price: limitPrice,
       },
-      { headers: HEADERS }
+      { headers }
     );
     return { buy: filled, sell: sellRes.data };
   } catch (err) {
