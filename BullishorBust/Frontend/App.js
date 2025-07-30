@@ -63,8 +63,20 @@ const HEADERS = {
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
 
+// === Trading strategy constants ===
+// Cooldown between trades on the same symbol (30 minutes)
+const COOL_DOWN_MS = 30 * 60 * 1000;
+// Limit buy buffer - 0.1% below current price
+const BUY_LIMIT_BUFFER = 0.999;
+// Profit target for limit sells (1.25%)
+const PROFIT_TARGET_PERCENT = 0.0125;
+// Stop loss if price falls 2.5% from entry
+const STOP_LOSS_PERCENT = 0.025;
+
 // Track tokens that ran out of funds this cycle
 let perSymbolFundsLock = {};
+// Track timestamp of last trade per symbol
+let lastTradeTime = {};
 
 // Allow components to subscribe to log entries so they can display them
 let logSubscriber = null;
@@ -170,19 +182,24 @@ export default function App() {
   };
 
   // Determine whether prices are trending up or down by performing a
-  // least-squares linear regression over the last 15 closes.  The magic
+  // least-squares linear regression over the last 30 closes.  The magic
   // numbers here were chosen heuristically: slopes above 0.02 are treated
-  // as up, below -0.02 as down.
+  // as up, below -0.02 as down.  The slope is also returned so callers
+  // can decide if the market is trending strongly.
   const getTrendSymbol = (closes) => {
-    if (!Array.isArray(closes) || closes.length < 15) return '🟰';
-    const x = Array.from({ length: 15 }, (_, i) => i);
-    const y = closes.slice(-15);
+    const N = 30;
+    if (!Array.isArray(closes) || closes.length < N) {
+      return { symbol: '🟰', slope: 0 };
+    }
+    const x = Array.from({ length: N }, (_, i) => i);
+    const y = closes.slice(-N);
     const sumX = x.reduce((a, b) => a + b, 0);
     const sumY = y.reduce((a, b) => a + b, 0);
     const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
     const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
-    const slope = (15 * sumXY - sumX * sumY) / (15 * sumX2 - sumX * sumX);
-    return slope > 0.02 ? '⬆️' : slope < -0.02 ? '⬇️' : '🟰';
+    const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
+    const symbol = slope > 0.02 ? '⬆️' : slope < -0.02 ? '⬇️' : '🟰';
+    return { symbol, slope };
   };
 
   // Compute the MACD line (difference between two EMAs) and its signal
@@ -320,7 +337,9 @@ export default function App() {
       return;
     }
 
-    const limit_price = (basis * 1.0025).toFixed(5); // 0.25% profit target
+    const limit_price = (basis * (1 + PROFIT_TARGET_PERCENT)).toFixed(5); // 1.25% profit target
+
+    const stop_price = (basis * (1 - STOP_LOSS_PERCENT)).toFixed(5);
 
     const limitSell = {
       symbol,
@@ -331,10 +350,20 @@ export default function App() {
       limit_price,
     };
 
+    const stopLoss = {
+      symbol,
+      qty,
+      side: 'sell',
+      type: 'stop',
+      time_in_force: CRYPTO_TIME_IN_FORCE,
+      stop_price,
+    };
+
     logTradeAction('sell_attempt', symbol, {
       qty,
       basis,
       limit_price,
+      stop_price,
     });
     showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty.toFixed(6)}`);
 
@@ -357,6 +386,30 @@ export default function App() {
         logTradeAction('sell_success', symbol, { orderId: data.id, qty });
         showNotification(`✅ Sell Placed: ${symbol} @ $${limit_price}`);
         console.log(`[SELL SUCCESS] ${symbol}`, data);
+
+        // Place stop-loss order after limit sell
+        try {
+          const stopRes = await fetch(`${ALPACA_BASE_URL}/orders`, {
+            method: 'POST',
+            headers: HEADERS,
+            body: JSON.stringify(stopLoss),
+          });
+          const stopRaw = await stopRes.text();
+          let stopData;
+          try {
+            stopData = JSON.parse(stopRaw);
+          } catch {
+            stopData = { raw: stopRaw };
+          }
+          if (stopRes.ok && stopData.id) {
+            logTradeAction('stop_success', symbol, { orderId: stopData.id, stop_price });
+          } else {
+            const msg = stopData?.message || JSON.stringify(stopData);
+            logTradeAction('stop_failed', symbol, { status: stopRes.status, reason: msg });
+          }
+        } catch (err) {
+          logTradeAction('stop_error', symbol, { error: err.message });
+        }
       } else {
         const msg = data?.message || JSON.stringify(data);
         logTradeAction('sell_failed', symbol, { status: res.status, reason: msg });
@@ -377,6 +430,15 @@ export default function App() {
   // successful buy the function will automatically place a limit sell
   // once the position settles.
   const placeOrder = async (symbol, ccSymbol = symbol, isManual = false) => {
+    // Cooldown check per symbol
+    const now = Date.now();
+    if (lastTradeTime[symbol] && now - lastTradeTime[symbol] < COOL_DOWN_MS) {
+      logTradeAction('cooldown_skip', symbol, {
+        last: lastTradeTime[symbol],
+      });
+      console.log(`⏳ Cooldown active for ${symbol}`);
+      return;
+    }
     // Check for open orders FIRST
     const openOrders = await getOpenOrders(symbol);
     if (openOrders.length > 0) {
@@ -514,12 +576,17 @@ export default function App() {
         return;
       }
 
+      const limit_price = parseFloat((price * BUY_LIMIT_BUFFER).toFixed(5));
+      const qty = Math.floor((notional / limit_price) * 1e6) / 1e6;
+      logTradeAction('buy_limit_details', symbol, { limit_price, qty });
+
       const order = {
         symbol,
-        notional,
+        qty,
         side: 'buy',
-        type: 'market',
+        type: 'limit',
         time_in_force: CRYPTO_TIME_IN_FORCE,
+        limit_price,
       };
 
       const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
@@ -537,8 +604,13 @@ export default function App() {
       }
 
       if (res.ok && result.id) {
-        logTradeAction('buy_success', symbol, { id: result.id, notional });
-        showNotification(`✅ Bought ${symbol} $${notional}`);
+        logTradeAction('buy_success', symbol, {
+          id: result.id,
+          qty,
+          limit_price,
+        });
+        showNotification(`✅ Buy ${symbol} ${qty} @ $${limit_price}`);
+        lastTradeTime[symbol] = now;
         setTimeout(() => placeLimitSell(symbol), 5000);
       } else {
         logTradeAction('buy_failed', symbol, {
@@ -572,6 +644,7 @@ export default function App() {
         signal: null,
         signalDiff: null,
         trend: '🟰',
+        isTrendingMarket: false,
         entryReady: false,
         watchlist: false,
         missingData: false,
@@ -613,20 +686,30 @@ export default function App() {
             token.macd > prev.macd &&
             token.macd <= token.signal;
         }
-        token.trend = getTrendSymbol(closes);
+        const trendRes = getTrendSymbol(closes);
+        token.trend = trendRes.symbol;
+        token.isTrendingMarket = trendRes.slope > 0.04 || trendRes.slope < -0.04;
+        logTradeAction('trend_state', asset.symbol, {
+          slope: trendRes.slope,
+          trending: token.isTrendingMarket,
+          symbol: trendRes.symbol,
+        });
         token.missingData = token.price == null || closes.length < 20;
         // Automatically place sell for any held positions
         const held = await getPositionInfo(asset.symbol);
         if (held) {
           await placeLimitSell(asset.symbol);
         }
-        // Auto trade: verify entry conditions and log outcome
-        if (token.entryReady) {
-          logTradeAction('entry_ready_confirmed', asset.symbol);
+        // Auto trade: verify entry conditions and trend state
+        if (token.entryReady && token.isTrendingMarket) {
+          logTradeAction('entry_ready_confirmed', asset.symbol, {
+            trending: token.isTrendingMarket,
+          });
           await placeOrder(asset.symbol, asset.cc);
         } else {
           logTradeAction('entry_skipped', asset.symbol, {
             entryReady: token.entryReady,
+            trending: token.isTrendingMarket,
           });
         }
       } catch (err) {
