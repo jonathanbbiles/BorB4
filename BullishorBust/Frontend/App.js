@@ -48,6 +48,11 @@ const HEADERS = {
   'Content-Type': 'application/json',
 };
 
+// Backend server for manual trade requests. Default to local dev server
+// but allow override via Expo env var
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+
 // Buffer the sell price to offset taker fees while keeping the profit target
 const FEE_BUFFER = 0.0025; // 0.25% taker fee
 const TARGET_PROFIT = 0.0005; // 0.05% desired profit
@@ -137,6 +142,36 @@ export default function App() {
   const [logHistory, setLogHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const intervalRef = useRef(null);
+
+  // Manual buy handler that sends a request to the backend /buy endpoint
+  const manualBuy = async (token) => {
+    if (!token?.symbol) return;
+    console.log('Manual buy button pressed:', token.symbol);
+    try {
+      console.log('Sending buy request to backend...');
+      const res = await fetch(`${BACKEND_URL}/buy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: token.symbol,
+          qty: 1,
+          side: 'buy',
+          type: 'market',
+          time_in_force: CRYPTO_TIME_IN_FORCE,
+        }),
+      });
+      const data = await res.json();
+      console.log('Buy response:', data);
+      if (res.ok) {
+        showNotification(`✅ Buy placed: ${token.symbol}`);
+      } else {
+        showNotification(`❌ Buy failed: ${data.error || res.status}`);
+      }
+    } catch (err) {
+      console.log('Buy error:', err.message);
+      showNotification(`❌ Buy error: ${err.message}`);
+    }
+  };
 
   // Subscribe to log events and keep only the most recent five entries
   useEffect(() => {
@@ -522,6 +557,8 @@ export default function App() {
         time_in_force: CRYPTO_TIME_IN_FORCE,
       };
 
+      console.log('Sending buy request to Alpaca...', order);
+
       const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
         method: 'POST',
         headers: HEADERS,
@@ -713,7 +750,7 @@ export default function App() {
           <Text style={styles.error}>❌ Not tradable: {asset.error}</Text>
         )}
         <Text>{asset.time}</Text>
-        <TouchableOpacity onPress={() => placeOrder(asset.symbol, asset.cc, true)}>
+        <TouchableOpacity onPress={() => manualBuy(asset)}>
           <Text style={styles.buyButton}>Manual BUY</Text>
         </TouchableOpacity>
       </View>
