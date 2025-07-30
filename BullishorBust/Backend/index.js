@@ -7,7 +7,7 @@ app.use(express.json());
 
 const API_KEY = process.env.ALPACA_API_KEY;
 const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
-const BASE_URL = 'https://paper-api.alpaca.markets';
+const BASE_URL = process.env.ALPACA_BASE_URL;
 const headers = {
   'APCA-API-KEY-ID': API_KEY,
   'APCA-API-SECRET-KEY': SECRET_KEY,
