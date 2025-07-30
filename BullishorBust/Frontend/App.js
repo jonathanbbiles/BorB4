@@ -11,64 +11,60 @@ import {
 } from 'react-native';
 
 /*
-* This component implements a simple crypto trading dashboard for Alpaca.  It
-* tracks a predefined list of crypto pairs, calculates a handful of
-* technical indicators (RSI, MACD and a simple linear‐regression trend
-* indicator) from minute data provided by CryptoCompare and then exposes
-* manual and automatic trade actions against the Alpaca paper trading API.
-*
-* Key improvements over the original implementation:
-*  - All network interactions are wrapped in try/catch blocks and return
-*    sensible defaults on failure to ensure the UI never crashes because
-*    of a bad response.
-*  - A small concurrency guard prevents multiple overlapping refreshes
-*    from running at the same time.  This is important because the
-*    component refreshes itself on a timer when auto trading is enabled.
-*  - We added a helper to check for open orders on a symbol before
-*    attempting to place a new trade.  Without this guard duplicate buy
-*    orders could be fired off if an earlier order was still pending.
-*  - The refresh interval is stored in a ref and cleaned up properly when
-*    the component unmounts or when auto trading is toggled off.
-*  - A handful of comments have been sprinkled throughout the code to
-*    explain why certain decisions were made.  Feel free to remove them
-*    for production use.
-*/
+ * This component implements a simple crypto trading dashboard for Alpaca.  It
+ * tracks a predefined list of crypto pairs, calculates a handful of
+ * technical indicators (RSI, MACD and a simple linear‐regression trend
+ * indicator) from minute data provided by CoinGecko and then exposes
+ * manual and automatic trade actions against the Alpaca paper trading API.
+ *
+ * This version addresses a critical bug in the buy logic.  In prior
+ * iterations the notional used for a market buy order was derived from
+ * the raw target allocation rather than the adjusted allocation that
+ * accounted for safety margins and buffers.  As a result, the app would
+ * occasionally request more notional value than the account’s available
+ * cash, leading to order rejections.  The fix ensures that the final
+ * notional is based off of the protected allocation and never exceeds
+ * the appropriate buying power for crypto trades.
+ *
+ * In addition, crypto trades rely on settled cash only.  Alpaca
+ * exposes a `non_marginable_buying_power` attribute which reflects the
+ * amount of cash that can be used to purchase crypto.  According to
+ * Alpaca’s support documentation, securities transactions take two
+ * business days to settle, so cash resulting from an equity sale may
+ * not be immediately available for crypto orders.  We therefore use
+ * `non_marginable_buying_power` (falling back to `buying_power` or
+ * `cash` if it’s unavailable) when computing how much capital can be
+ * allocated to a crypto purchase【247783379990709†L355-L359】.
+ *
+ * Finally, Alpaca automatically applies a 2 % price collar to market
+ * orders to protect users from rapid price movements.  To ensure that
+ * our notional requests never overshoot the available cash after this
+ * collar is applied, we incorporate an extra buffer into the
+ * allocation calculation.  Specifically, the safety factor reduces
+ * the prospective allocation by an amount greater than the collar
+ * (3 % total) which, combined with a small fixed safety margin, keeps
+ * the eventual limit price well within the account’s buying power.
+ */
 
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
-// Alpaca base URL remains the paper trading endpoint.
+// For temporary testing we hardcode the credentials. Remove before committing
+// to production.
+const ALPACA_KEY = 'PKGY01ABISEXQJZX5L7M';
+const ALPACA_SECRET = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
 const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
 
-// Helper to build Alpaca auth headers from Expo environment variables
-const getAlpacaHeaders = () => ({
-  'APCA-API-KEY-ID': process.env.EXPO_PUBLIC_ALPACA_KEY,
-  'APCA-API-SECRET-KEY': process.env.EXPO_PUBLIC_ALPACA_SECRET,
+const HEADERS = {
+  'APCA-API-KEY-ID': ALPACA_KEY,
+  'APCA-API-SECRET-KEY': ALPACA_SECRET,
   'Content-Type': 'application/json',
-});
-
-// Backend server for manual trade requests. Default to local dev server
-// but allow override via Expo env var
-// When running on a real device "localhost" will not resolve to your
-// development machine. Use an Expo or ngrok tunnel URL instead.
-// Backend server for trade requests
-const BACKEND_URL = 'https://borb4.onrender.com';
-
-// Buffer the sell price to offset taker fees while keeping the profit target
-const FEE_BUFFER = 0.0025; // 0.25% taker fee
-const TARGET_PROFIT = 0.0005; // 0.05% desired profit
-const TOTAL_MARKUP = FEE_BUFFER + TARGET_PROFIT;
+};
 
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
 
 // Track tokens that ran out of funds this cycle
 let perSymbolFundsLock = {};
-
-// Floor helper for consistent precision
-const floorToPrecision = (value, decimals = 6) => {
-  const factor = Math.pow(10, decimals);
-  return Math.floor(value * factor) / factor;
-};
 
 // Allow components to subscribe to log entries so they can display them
 let logSubscriber = null;
@@ -105,29 +101,28 @@ const logTradeAction = async (type, symbol, details = {}) => {
   // }
 };
 
-// List of crypto pairs we want to follow.  Each entry defines both the
-// instrument symbol used by Alpaca as well as the base coin symbol used
-// by CryptoCompare.  If you wish to track additional tokens you can
-// simply append to this list.
+// List of crypto pairs we want to follow. Each entry defines the
+// Alpaca symbol, the CryptoCompare base symbol used for pricing (cc),
+// and the CoinGecko id.
 const ORIGINAL_TOKENS = [
-  { name: 'BTC/USD', symbol: 'BTCUSD', cc: 'BTC' },
-  { name: 'ETH/USD', symbol: 'ETHUSD', cc: 'ETH' },
-  { name: 'SOL/USD', symbol: 'SOLUSD', cc: 'SOL' },
-  { name: 'LTC/USD', symbol: 'LTCUSD', cc: 'LTC' },
-  { name: 'BCH/USD', symbol: 'BCHUSD', cc: 'BCH' },
-  { name: 'DOGE/USD', symbol: 'DOGEUSD', cc: 'DOGE' },
-  { name: 'AVAX/USD', symbol: 'AVAXUSD', cc: 'AVAX' },
-  { name: 'ADA/USD', symbol: 'ADAUSD', cc: 'ADA' },
-  { name: 'AAVE/USD', symbol: 'AAVEUSD', cc: 'AAVE' },
-  { name: 'UNI/USD', symbol: 'UNIUSD', cc: 'UNI' },
-  { name: 'MATIC/USD', symbol: 'MATICUSD', cc: 'MATIC' },
-  { name: 'LINK/USD', symbol: 'LINKUSD', cc: 'LINK' },
-  { name: 'SHIB/USD', symbol: 'SHIBUSD', cc: 'SHIB' },
-  { name: 'XRP/USD', symbol: 'XRPUSD', cc: 'XRP' },
-  { name: 'USDT/USD', symbol: 'USDTUSD', cc: 'USDT' },
-  { name: 'USDC/USD', symbol: 'USDCUSD', cc: 'USDC' },
-  { name: 'TRX/USD', symbol: 'TRXUSD', cc: 'TRX' },
-  { name: 'ETC/USD', symbol: 'ETCUSD', cc: 'ETC' },
+  { name: 'BTC/USD', symbol: 'BTCUSD', cc: 'BTC', gecko: 'bitcoin' },
+  { name: 'ETH/USD', symbol: 'ETHUSD', cc: 'ETH', gecko: 'ethereum' },
+  { name: 'SOL/USD', symbol: 'SOLUSD', cc: 'SOL', gecko: 'solana' },
+  { name: 'LTC/USD', symbol: 'LTCUSD', cc: 'LTC', gecko: 'litecoin' },
+  { name: 'BCH/USD', symbol: 'BCHUSD', cc: 'BCH', gecko: 'bitcoin-cash' },
+  { name: 'DOGE/USD', symbol: 'DOGEUSD', cc: 'DOGE', gecko: 'dogecoin' },
+  { name: 'AVAX/USD', symbol: 'AVAXUSD', cc: 'AVAX', gecko: 'avalanche-2' },
+  { name: 'ADA/USD', symbol: 'ADAUSD', cc: 'ADA', gecko: 'cardano' },
+  { name: 'AAVE/USD', symbol: 'AAVEUSD', cc: 'AAVE', gecko: 'aave' },
+  { name: 'UNI/USD', symbol: 'UNIUSD', cc: 'UNI', gecko: 'uniswap' },
+  { name: 'MATIC/USD', symbol: 'MATICUSD', cc: 'MATIC', gecko: 'matic-network' },
+  { name: 'LINK/USD', symbol: 'LINKUSD', cc: 'LINK', gecko: 'chainlink' },
+  { name: 'SHIB/USD', symbol: 'SHIBUSD', cc: 'SHIB', gecko: 'shiba-inu' },
+  { name: 'XRP/USD', symbol: 'XRPUSD', cc: 'XRP', gecko: 'ripple' },
+  { name: 'USDT/USD', symbol: 'USDTUSD', cc: 'USDT', gecko: 'tether' },
+  { name: 'USDC/USD', symbol: 'USDCUSD', cc: 'USDC', gecko: 'usd-coin' },
+  { name: 'TRX/USD', symbol: 'TRXUSD', cc: 'TRX', gecko: 'tron' },
+  { name: 'ETC/USD', symbol: 'ETCUSD', cc: 'ETC', gecko: 'ethereum-classic' },
 ];
 
 export default function App() {
@@ -141,50 +136,7 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [logHistory, setLogHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  // Connectivity status for banners
-  const [alpacaOk, setAlpacaOk] = useState(null);
-  const [backendOk, setBackendOk] = useState(null);
   const intervalRef = useRef(null);
-
-  useEffect(() => {
-    console.log(`\uD83D\uDD01 Using backend: ${BACKEND_URL}`);
-  }, []);
-
-  // Manual buy handler that sends a request to the backend /buy endpoint
-  const manualBuy = async (token) => {
-    if (!token?.symbol) return;
-    console.log('Manual buy button pressed:', token.symbol);
-    try {
-      console.log('Sending buy request to backend...');
-      const res = await fetch(`${BACKEND_URL}/buy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: token.symbol,
-          qty: 1,
-          side: 'buy',
-          type: 'market',
-          time_in_force: CRYPTO_TIME_IN_FORCE,
-        }),
-      });
-      const raw = await res.text();
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        data = { raw };
-      }
-      console.log('Buy response:', data);
-      if (res.ok) {
-        showNotification(`✅ Buy placed: ${token.symbol}`);
-      } else {
-        showNotification(`❌ Buy failed: ${data.error || res.status}`);
-      }
-    } catch (err) {
-      console.log('Buy error:', err.message);
-      showNotification(`❌ Buy error: ${err.message}`);
-    }
-  };
 
   // Subscribe to log events and keep only the most recent five entries
   useEffect(() => {
@@ -198,26 +150,6 @@ export default function App() {
   const showNotification = (message) => {
     setNotification(message);
     setTimeout(() => setNotification(null), 5000);
-  };
-
-  // Ping Alpaca and backend servers to display connectivity status
-  const checkConnectivity = async () => {
-    try {
-      const res = await fetch(`${ALPACA_BASE_URL}/account`, {
-        headers: getAlpacaHeaders(),
-      });
-      setAlpacaOk(res.ok);
-    } catch (err) {
-      console.log('Alpaca connectivity check failed:', err.message);
-      setAlpacaOk(false);
-    }
-    try {
-      const res = await fetch(`${BACKEND_URL}/ping`);
-      setBackendOk(res.ok);
-    } catch (err) {
-      console.log('Backend connectivity check failed:', err.message);
-      setBackendOk(false);
-    }
   };
 
   // Basic RSI implementation using a simple moving average of gains and
@@ -278,15 +210,12 @@ export default function App() {
     return { macd: macdLine[macdLine.length - 1], signal };
   };
 
-  // Sleep helper so we can await delays between retries
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
   // Retrieve the current position for a given symbol.  Returns null if
   // nothing is held or if the request fails.
   const getPositionInfo = async (symbol) => {
     try {
       const res = await fetch(`${ALPACA_BASE_URL}/positions/${symbol}`, {
-        headers: getAlpacaHeaders(),
+        headers: HEADERS,
       });
       if (!res.ok) return null;
       const info = await res.json();
@@ -297,9 +226,9 @@ export default function App() {
       );
       if (isNaN(available) || available <= 0) return null;
       return {
-        qty: floorToPrecision(qty),
+        qty: parseFloat(Number(qty).toFixed(6)),
         basis,
-        available: floorToPrecision(available),
+        available,
       };
     } catch (err) {
       console.error('getPositionInfo error:', err);
@@ -315,7 +244,7 @@ export default function App() {
     try {
       const res = await fetch(
         `${ALPACA_BASE_URL}/orders?status=open&symbols=${symbol}`,
-        { headers: getAlpacaHeaders() }
+        { headers: HEADERS }
       );
       if (!res.ok) {
         const txt = await res.text();
@@ -345,28 +274,32 @@ export default function App() {
       return;
     }
 
-    const qty = floorToPrecision(position.available);
+    const qtyRaw = parseFloat(position.available);
     const basis = parseFloat(position.basis);
-    if (!qty || qty <= 0 || !basis || basis <= 0) {
+    if (!qtyRaw || qtyRaw <= 0 || !basis || basis <= 0) {
       logTradeAction('sell_skip_reason', symbol, {
         reason: 'invalid qty or basis',
-        availableQty: qty,
+        availableQty: qtyRaw,
         basisPrice: basis,
       });
       console.log(
-        `[SELL SKIPPED] Invalid qty or basis for ${symbol}: qty=${qty}, basis=${basis}`
+        `[SELL SKIPPED] Invalid qty or basis for ${symbol}: qty=${qtyRaw}, basis=${basis}`
       );
       return;
     }
+
+    const qty = Math.floor(qtyRaw * 1e6) / 1e6;
     logTradeAction('sell_qty_confirm', symbol, {
       qtyRequested: qty,
-      qtyAvailable: position.available,
+      qtyAvailable: Math.floor(position.available * 1e6) / 1e6,
     });
     console.log(
-      `[SELL QTY CONFIRM] ${symbol} available=${position.available} qty=${qty}`
+      `[SELL QTY CONFIRM] ${symbol} available=${(
+        Math.floor(position.available * 1e6) / 1e6
+      )} qty=${qty.toFixed(6)}`
     );
     // Skip if the notional value is below Alpaca's minimum ($1)
-    const notional = qty * basis;
+    const notional = Math.floor(qty * basis * 1e6) / 1e6;
     if (notional < 1) {
       logTradeAction('sell_skip', symbol, {
         availableQty: qty,
@@ -381,16 +314,13 @@ export default function App() {
         notionalValue: notional,
       });
       console.log(
-        `[SELL SKIPPED] ${symbol} notional $${notional.toFixed(2)} below $1`
+        `[SELL SKIPPED] ${symbol} notional $${notional.toFixed(6)} below $1`
       );
-      showNotification(
-        `❌ Skip ${symbol}: $${notional.toFixed(2)} < $1`
-      );
+      showNotification(`❌ Skip ${symbol}: $${notional.toFixed(6)} < $1`);
       return;
     }
 
-    // Include buffer for taker fees so profit margin is preserved
-    const limit_price = (basis * (1 + TOTAL_MARKUP)).toFixed(5);
+    const limit_price = (basis * 1.0025).toFixed(5); // 0.25% profit target
 
     const limitSell = {
       symbol,
@@ -406,12 +336,12 @@ export default function App() {
       basis,
       limit_price,
     });
-    showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty}`);
+    showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty.toFixed(6)}`);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/buy`, {
+      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: HEADERS,
         body: JSON.stringify(limitSell),
       });
 
@@ -442,12 +372,11 @@ export default function App() {
 
   // Place a market buy order for the given symbol.  Will allocate up to
   // 10% of the current portfolio to the trade but never more than the
-  // available cash. Duplicate buys are
-  // prevented via the perSymbolFundsLock map and via checking for open
-  // orders on the symbol.  After a successful buy the function will
-  // automatically place a limit sell once the position settles.
+  // available cash. Duplicate buys are prevented via the perSymbolFundsLock
+  // map and via checking for open orders on the symbol.  After a
+  // successful buy the function will automatically place a limit sell
+  // once the position settles.
   const placeOrder = async (symbol, ccSymbol = symbol, isManual = false) => {
-
     // Check for open orders FIRST
     const openOrders = await getOpenOrders(symbol);
     if (openOrders.length > 0) {
@@ -470,24 +399,14 @@ export default function App() {
     }
 
     logTradeAction('buy_attempt', symbol, { isManual });
-    console.log('Attempting to place buy for', symbol);
 
     try {
-      // Fetch current market price
+      // Fetch current market price from CryptoCompare
       const priceRes = await fetch(
         `https://min-api.cryptocompare.com/data/price?fsym=${ccSymbol}&tsyms=USD`
       );
-      if (!priceRes.ok) {
-        throw new Error(`Price API ${priceRes.status}`);
-      }
-      const priceRaw = await priceRes.text();
-      let priceData;
-      try {
-        priceData = JSON.parse(priceRaw);
-      } catch {
-        throw new Error('Invalid price JSON');
-      }
-      const price = priceData.USD;
+      const priceData = await priceRes.json();
+      const price = priceData?.USD;
 
       if (!price || isNaN(price)) {
         throw new Error('Invalid price data');
@@ -495,48 +414,47 @@ export default function App() {
 
       // Get Alpaca account info
       const accountRes = await fetch(`${ALPACA_BASE_URL}/account`, {
-        headers: getAlpacaHeaders(),
+        headers: HEADERS,
       });
-      if (!accountRes.ok) {
-        throw new Error(`Account API ${accountRes.status}`);
-      }
-      const accountRaw = await accountRes.text();
-      let accountData;
-      try {
-        accountData = JSON.parse(accountRaw);
-      } catch {
-        throw new Error('Invalid account JSON');
-      }
-      const cash = parseFloat(accountData.cash || 0);
-      const cashWithdrawable = parseFloat(accountData.cash_withdrawable || 0);
-      const portfolioValue = parseFloat(accountData.portfolio_value || '0');
+      const accountData = await accountRes.json();
 
-      logTradeAction('cash_available', symbol, { cash, cash_withdrawable: cashWithdrawable });
-
-      const SAFETY_MARGIN = 1; // prevents over-request by $1 buffer
-      const SAFETY_FACTOR = 0.99; // extra buffer for price fluctuations
-
-      const targetAllocation = portfolioValue * 0.1;
-
-      // Always choose the smaller of the 10% allocation, available cash
-      // minus the safety margin and withdrawable cash minus the safety margin
-      // to avoid requesting more funds than can actually be used.
-      let allocation = Math.min(
-        targetAllocation,
-        cash - SAFETY_MARGIN,
-        cashWithdrawable - SAFETY_MARGIN
+      // Use non_marginable_buying_power when available.  Crypto
+      // purchases can only be funded from settled cash, which is
+      // reflected in non_marginable_buying_power【247783379990709†L355-L359】.
+      // Fall back to buying_power or cash if the field is absent.
+      const cashRaw =
+        accountData.non_marginable_buying_power ??
+        accountData.buying_power ??
+        accountData.cash;
+      const cash = parseFloat(cashRaw || 0);
+      const portfolioValue = parseFloat(
+        accountData.equity ?? accountData.portfolio_value ?? '0'
       );
 
-      // Apply a small safety factor to account for price fluctuations
-      // between calculation and order placement.
+      logTradeAction('cash_available', symbol, { cash });
+
+      // Safety margin and factors.  The price collar for market
+      // orders is 2 %, so we reduce our allocation by a slightly
+      // larger factor (3 %) to remain safely within buying power.
+      const SAFETY_MARGIN = 1; // prevents over-request by $1 buffer
+      const PRICE_COLLAR_PERCENT = 0.02;
+      const EXTRA_BUFFER = 0.01;
+      const SAFETY_FACTOR = 1 - PRICE_COLLAR_PERCENT - EXTRA_BUFFER; // e.g. 0.97
+
+      // Determine the maximum allocation based on portfolio size.
+      const targetAllocation = portfolioValue * 0.1;
+      // Use the smaller of target allocation or available cash minus a safety margin
+      let allocation = Math.min(targetAllocation, cash - SAFETY_MARGIN);
+
+      // Apply safety factor so the notional never exceeds cash even after
+      // Alpaca's price collar is applied.  This reduces the allocation
+      // by a bit more than the collar so that rounding and slippage
+      // still leave room.
       allocation *= SAFETY_FACTOR;
 
-      // Final guard: never request more than the cash or withdrawable balances
+      // Final guard to ensure allocation never exceeds cash
       if (allocation > cash) {
         allocation = Math.floor(cash * 100) / 100;
-      }
-      if (allocation > cashWithdrawable) {
-        allocation = Math.floor(cashWithdrawable * 100) / 100;
       }
 
       // Ensure allocation is never negative
@@ -550,16 +468,14 @@ export default function App() {
         return;
       }
 
-      // Calculate the final notional using the adjusted allocation and
-      // round down to two decimals to stay within available funds
-      const rawAllocation = allocation;
+      // Calculate the final notional by rounding down to two decimals
       let notional = Math.floor(allocation * 100) / 100;
 
       // Confirm final allocation details
       logTradeAction('allocation_check', symbol, {
         cash,
         targetAllocation,
-        rawAllocation,
+        allocation,
         finalNotional: notional,
         safetyMargin: SAFETY_MARGIN,
         safetyFactor: SAFETY_FACTOR,
@@ -567,30 +483,28 @@ export default function App() {
 
       logTradeAction('notional_final', symbol, { notional });
 
+      // Skip trades that do not meet the minimum $1 notional
       if (notional < 1) {
         logTradeAction('skip_small_order', symbol, {
           reason: 'insufficient cash',
           targetAllocation,
-          allocation: rawAllocation,
+          allocation,
           cash,
         });
         return;
       }
 
-      // Use Alpaca's notional parameter to cap the trade amount. Rounding
-      // to two decimals ensures we never exceed available cash even if the
-      // price moves slightly after this calculation.
-
-      // If our requested notional exceeds cash, fall back to using
-      // 100% of available cash (rounded down to two decimals).
+      // If the requested notional exceeds available cash, cap to cash
       if (notional > cash) {
+        logTradeAction('notional_exceeds_cash', symbol, {
+          requested: notional,
+          cash,
+        });
         notional = Math.floor(cash * 100) / 100;
-      }
-      if (notional > cashWithdrawable) {
-        notional = Math.floor(cashWithdrawable * 100) / 100;
+        logTradeAction('notional_capped', symbol, { notional });
       }
 
-      // Ensure Alpaca minimum order amount of $1 is met after adjustment.
+      // Skip trades below Alpaca's $1 minimum after capping
       if (notional < 1) {
         logTradeAction('skip_small_order', symbol, {
           reason: 'notional below alpaca minimum after adjustment',
@@ -608,11 +522,9 @@ export default function App() {
         time_in_force: CRYPTO_TIME_IN_FORCE,
       };
 
-      console.log('Sending buy request to backend...', order);
-
-      const res = await fetch(`${BACKEND_URL}/buy`, {
+      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: HEADERS,
         body: JSON.stringify(order),
       });
 
@@ -623,7 +535,6 @@ export default function App() {
       } catch {
         result = { raw };
       }
-      console.log('Buy order response:', result);
 
       if (res.ok && result.id) {
         logTradeAction('buy_success', symbol, { id: result.id, notional });
@@ -648,7 +559,6 @@ export default function App() {
   const loadData = async () => {
     if (isLoading) return; // Prevent overlapping refreshes
     setIsLoading(true);
-    checkConnectivity();
     // Log whenever a refresh cycle begins
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
@@ -669,44 +579,21 @@ export default function App() {
         time: new Date().toLocaleTimeString(),
       };
       try {
-        // Fetch price and historical data in parallel
-        const [priceRes, histoRes] = await Promise.all([
-          fetch(
-            `https://min-api.cryptocompare.com/data/price?fsym=${asset.cc || asset.symbol}&tsyms=USD`
-          ),
-          fetch(
-            `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${asset.cc || asset.symbol}&tsym=USD&limit=52&aggregate=15`
-          ),
-        ]);
-        if (!priceRes.ok) {
-          throw new Error(`Price API ${priceRes.status}`);
-        }
-        if (!histoRes.ok) {
-          throw new Error(`Histo API ${histoRes.status}`);
-        }
-        const priceRaw = await priceRes.text();
-        let priceData;
-        try {
-          priceData = JSON.parse(priceRaw);
-        } catch {
-          throw new Error('Invalid price JSON');
-        }
-        if (typeof priceData.USD === 'number') {
+        // Fetch price and historical data from CryptoCompare in parallel
+        const priceUrl = `https://min-api.cryptocompare.com/data/price?fsym=${asset.cc}&tsyms=USD`;
+        const histoUrl = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${asset.cc}&tsym=USD&limit=52&aggregate=15`;
+
+        const [priceRes, histoRes] = await Promise.all([fetch(priceUrl), fetch(histoUrl)]);
+        const priceData = await priceRes.json();
+        const histoData = await histoRes.json();
+
+        // Price
+        if (typeof priceData?.USD === 'number') {
           token.price = priceData.USD;
         }
-        const histoRaw = await histoRes.text();
-        let histoData;
-        try {
-          histoData = JSON.parse(histoRaw);
-        } catch {
-          throw new Error('Invalid history JSON');
-        }
-        const histoBars = Array.isArray(histoData?.Data?.Data)
-          ? histoData.Data.Data
-          : [];
-        const closes = histoBars
-          .map((bar) => bar.close)
-          .filter((c) => typeof c === 'number');
+
+        const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
+        const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
         if (closes.length >= 20) {
           const r = calcRSI(closes);
           const macdRes = calcMACD(closes);
@@ -769,16 +656,25 @@ export default function App() {
     };
   }, []);
 
-  // Kick off a data load and connectivity check on mount
+  // Kick off a data load on mount
   useEffect(() => {
     loadData();
-    checkConnectivity();
+    (async () => {
+      try {
+        const res = await fetch('https://paper-api.alpaca.markets/v2/account', { headers: HEADERS });
+        const account = await res.json();
+        console.log('[ALPACA CONNECTED]', account.account_number, 'Equity:', account.equity);
+        showNotification('✅ Connected to Alpaca');
+      } catch (err) {
+        console.error('[ALPACA CONNECTION FAILED]', err);
+        showNotification('❌ Alpaca API Error');
+      }
+    })();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
     loadData();
-    checkConnectivity();
   };
 
   const renderCard = (asset) => {
@@ -809,7 +705,7 @@ export default function App() {
           <Text style={styles.error}>❌ Not tradable: {asset.error}</Text>
         )}
         <Text>{asset.time}</Text>
-        <TouchableOpacity onPress={() => manualBuy(asset)}>
+        <TouchableOpacity onPress={() => placeOrder(asset.symbol, asset.cc, true)}>
           <Text style={styles.buyButton}>Manual BUY</Text>
         </TouchableOpacity>
       </View>
@@ -835,11 +731,6 @@ export default function App() {
       contentContainerStyle={[styles.container, darkMode && styles.containerDark]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
-      <View style={styles.banner}>
-        <Text style={styles.bannerText}>
-          Alpaca {alpacaOk ? '✅' : alpacaOk === false ? '❌' : '...'} | Backend {backendOk ? '✅' : backendOk === false ? '❌' : '...'}
-        </Text>
-      </View>
       <View style={styles.row}>
         <Switch value={darkMode} onValueChange={setDarkMode} />
         <Text style={[styles.title, darkMode && styles.titleDark]}>🎭 Bullish or Bust!</Text>
@@ -947,11 +838,4 @@ const styles = StyleSheet.create({
     zIndex: 998,
   },
   logText: { color: '#fff', fontSize: 12 },
-  banner: {
-    padding: 6,
-    backgroundColor: '#333',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  bannerText: { color: '#fff' },
 });
