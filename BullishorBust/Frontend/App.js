@@ -36,24 +36,22 @@ import {
 
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
-// For temporary testing we hardcode the credentials. Remove before committing
-// to production.
-const ALPACA_KEY = 'PKGY01ABISEXQJZX5L7M';
-const ALPACA_SECRET = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
+// Alpaca base URL remains the paper trading endpoint.
 const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
 
-const HEADERS = {
-  'APCA-API-KEY-ID': ALPACA_KEY,
-  'APCA-API-SECRET-KEY': ALPACA_SECRET,
+// Helper to build Alpaca auth headers from Expo environment variables
+const getAlpacaHeaders = () => ({
+  'APCA-API-KEY-ID': process.env.EXPO_PUBLIC_ALPACA_KEY,
+  'APCA-API-SECRET-KEY': process.env.EXPO_PUBLIC_ALPACA_SECRET,
   'Content-Type': 'application/json',
-};
+});
 
 // Backend server for manual trade requests. Default to local dev server
 // but allow override via Expo env var
 // When running on a real device "localhost" will not resolve to your
 // development machine. Use an Expo or ngrok tunnel URL instead.
-const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://abc123.ngrok-free.app'; // <-- updated
+// Backend server for trade requests
+const BACKEND_URL = 'https://borb4.onrender.com';
 
 // Buffer the sell price to offset taker fees while keeping the profit target
 const FEE_BUFFER = 0.0025; // 0.25% taker fee
@@ -205,7 +203,9 @@ export default function App() {
   // Ping Alpaca and backend servers to display connectivity status
   const checkConnectivity = async () => {
     try {
-      const res = await fetch(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
+      const res = await fetch(`${ALPACA_BASE_URL}/account`, {
+        headers: getAlpacaHeaders(),
+      });
       setAlpacaOk(res.ok);
     } catch (err) {
       console.log('Alpaca connectivity check failed:', err.message);
@@ -286,7 +286,7 @@ export default function App() {
   const getPositionInfo = async (symbol) => {
     try {
       const res = await fetch(`${ALPACA_BASE_URL}/positions/${symbol}`, {
-        headers: HEADERS,
+        headers: getAlpacaHeaders(),
       });
       if (!res.ok) return null;
       const info = await res.json();
@@ -315,7 +315,7 @@ export default function App() {
     try {
       const res = await fetch(
         `${ALPACA_BASE_URL}/orders?status=open&symbols=${symbol}`,
-        { headers: HEADERS }
+        { headers: getAlpacaHeaders() }
       );
       if (!res.ok) {
         const txt = await res.text();
@@ -409,9 +409,9 @@ export default function App() {
     showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty}`);
 
     try {
-      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+      const res = await fetch(`${BACKEND_URL}/buy`, {
         method: 'POST',
-        headers: HEADERS,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(limitSell),
       });
 
@@ -495,7 +495,7 @@ export default function App() {
 
       // Get Alpaca account info
       const accountRes = await fetch(`${ALPACA_BASE_URL}/account`, {
-        headers: HEADERS,
+        headers: getAlpacaHeaders(),
       });
       if (!accountRes.ok) {
         throw new Error(`Account API ${accountRes.status}`);
@@ -608,11 +608,11 @@ export default function App() {
         time_in_force: CRYPTO_TIME_IN_FORCE,
       };
 
-      console.log('Sending buy request to Alpaca...', order);
+      console.log('Sending buy request to backend...', order);
 
-      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+      const res = await fetch(`${BACKEND_URL}/buy`, {
         method: 'POST',
-        headers: HEADERS,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(order),
       });
 
