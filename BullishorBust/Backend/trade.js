@@ -12,6 +12,8 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
+const MIN_ORDER_NOTIONAL = 1; // Alpaca minimum order amount
+
 // Offsets taker fees when calculating profit target
 const FEE_BUFFER = 0.0025; // 0.25% taker fee
 const TARGET_PROFIT = 0.0005; // 0.05% desired profit
@@ -92,9 +94,11 @@ async function getAccountInfo() {
   const res = await axios.get(`${BASE_URL}/v2/account`, { headers });
   const portfolioValue = parseFloat(res.data.portfolio_value);
   const buyingPower = parseFloat(res.data.buying_power);
+  const cash = parseFloat(res.data.cash);
   return {
     portfolioValue: isNaN(portfolioValue) ? 0 : portfolioValue,
     buyingPower: isNaN(buyingPower) ? 0 : buyingPower,
+    cash: isNaN(cash) ? 0 : cash,
   };
 }
 
@@ -117,19 +121,21 @@ async function placeMarketBuyThenSell(symbol) {
   ]);
 
   const portfolioValue = account.portfolioValue;
-  const buyingPower = account.buyingPower;
+  const calculatedAllocation = portfolioValue * 0.1;
+  const notional = Math.min(calculatedAllocation, account.cash);
 
-  const targetTradeAmount = portfolioValue * 0.1;
-  const amountToSpend = Math.min(targetTradeAmount, buyingPower);
-
-  if (amountToSpend < 10) {
-    throw new Error('Insufficient buying power for trade');
+  if (notional < MIN_ORDER_NOTIONAL) {
+    console.log(`allocation_skipped_due_to_min_notional ${symbol}`);
+    return { skipped: true };
   }
 
-  const qty = roundQty(amountToSpend / price);
+  const qty = roundQty(notional / price);
   if (qty <= 0) {
-    throw new Error('Insufficient buying power for trade');
+    console.log(`allocation_skipped_due_to_min_notional ${symbol}`);
+    return { skipped: true };
   }
+
+  console.log(`trade_executed ${symbol} for $${notional}`);
 
   const buyRes = await axios.post(
     `${BASE_URL}/v2/orders`,
