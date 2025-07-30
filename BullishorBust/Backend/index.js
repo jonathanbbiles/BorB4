@@ -21,6 +21,17 @@ app.get('/ping', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Verify Alpaca API connectivity and credentials
+app.get('/ping-alpaca', async (req, res) => {
+  try {
+    await axios.get(`${BASE_URL}/v2/account`, { headers });
+    res.json({ status: 'ok' });
+  } catch (err) {
+    console.error('Ping Alpaca failed:', err?.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
 // Sequentially place a limit buy order followed by a limit sell once filled
 app.post('/trade', async (req, res) => {
   const { symbol } = req.body;

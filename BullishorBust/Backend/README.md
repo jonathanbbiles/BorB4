@@ -1,6 +1,7 @@
 # Bullish or Bust! Backend
 
 This Node.js backend handles Alpaca API trades via a `/buy` endpoint.
+It also exposes `/ping` and `/ping-alpaca` health check routes.
 
 ## Setup
 
