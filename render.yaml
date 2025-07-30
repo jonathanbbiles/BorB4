@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: bullish-backend
+    rootDir: BullishorBust/Backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    nodeVersion: 18
