@@ -59,6 +59,12 @@ const CRYPTO_TIME_IN_FORCE = 'gtc';
 // Track tokens that ran out of funds this cycle
 let perSymbolFundsLock = {};
 
+// Floor helper for consistent precision
+const floorToPrecision = (value, decimals = 6) => {
+  const factor = Math.pow(10, decimals);
+  return Math.floor(value * factor) / factor;
+};
+
 // Allow components to subscribe to log entries so they can display them
 let logSubscriber = null;
 export const registerLogSubscriber = (fn) => {
@@ -223,9 +229,9 @@ export default function App() {
       );
       if (isNaN(available) || available <= 0) return null;
       return {
-        qty: parseFloat(Number(qty).toFixed(6)),
+        qty: floorToPrecision(qty),
         basis,
-        available,
+        available: floorToPrecision(available),
       };
     } catch (err) {
       console.error('getPositionInfo error:', err);
@@ -271,7 +277,7 @@ export default function App() {
       return;
     }
 
-    const qty = parseFloat(position.available);
+    const qty = floorToPrecision(position.available);
     const basis = parseFloat(position.basis);
     if (!qty || qty <= 0 || !basis || basis <= 0) {
       logTradeAction('sell_skip_reason', symbol, {
@@ -396,6 +402,7 @@ export default function App() {
     }
 
     logTradeAction('buy_attempt', symbol, { isManual });
+    console.log('Attempting to place buy for', symbol);
 
     try {
       // Fetch current market price
@@ -528,6 +535,7 @@ export default function App() {
       } catch {
         result = { raw };
       }
+      console.log('Buy order response:', result);
 
       if (res.ok && result.id) {
         logTradeAction('buy_success', symbol, { id: result.id, notional });
