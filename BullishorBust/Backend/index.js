@@ -28,22 +28,15 @@ app.post('/trade', async (req, res) => {
 
 app.post('/buy', async (req, res) => {
   const { symbol, qty, side, type, time_in_force, limit_price } = req.body;
+  console.log('Received manual buy for:', symbol);
+  const order = { symbol, qty, side, type, time_in_force, limit_price };
+  console.log('Order payload:', order);
 
   try {
-    const response = await axios.post(
-      `${BASE_URL}/v2/orders`,
-      {
-        symbol,
-        qty,
-        side,
-        type,
-        time_in_force,
-        limit_price,
-      },
-      {
-        headers,
-      }
-    );
+    const response = await axios.post(`${BASE_URL}/v2/orders`, order, {
+      headers,
+    });
+    console.log('Alpaca response:', response.data);
     res.json(response.data);
   } catch (error) {
     console.error('Buy error:', error?.response?.data || error.message);
