@@ -1,10 +1,12 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const axios = require('axios');
 const { placeMarketBuyThenSell } = require('./trade');
 const app = express();
 app.use(express.json());
 
+app.use(cors());
 const API_KEY = process.env.ALPACA_API_KEY;
 const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
 const BASE_URL = process.env.ALPACA_BASE_URL;
