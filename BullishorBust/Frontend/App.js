@@ -50,8 +50,10 @@ const HEADERS = {
 
 // Backend server for manual trade requests. Default to local dev server
 // but allow override via Expo env var
+// When running on a real device "localhost" will not resolve to your
+// development machine. Use an Expo or ngrok tunnel URL instead.
 const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'https://your-expo-url.ngrok-free.app';
 
 // Buffer the sell price to offset taker fees while keeping the profit target
 const FEE_BUFFER = 0.0025; // 0.25% taker fee
@@ -141,6 +143,9 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [logHistory, setLogHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  // Connectivity status for banners
+  const [alpacaOk, setAlpacaOk] = useState(null);
+  const [backendOk, setBackendOk] = useState(null);
   const intervalRef = useRef(null);
 
   // Manual buy handler that sends a request to the backend /buy endpoint
@@ -160,7 +165,13 @@ export default function App() {
           time_in_force: CRYPTO_TIME_IN_FORCE,
         }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = { raw };
+      }
       console.log('Buy response:', data);
       if (res.ok) {
         showNotification(`✅ Buy placed: ${token.symbol}`);
@@ -185,6 +196,24 @@ export default function App() {
   const showNotification = (message) => {
     setNotification(message);
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Ping Alpaca and backend servers to display connectivity status
+  const checkConnectivity = async () => {
+    try {
+      const res = await fetch(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
+      setAlpacaOk(res.ok);
+    } catch (err) {
+      console.log('Alpaca connectivity check failed:', err.message);
+      setAlpacaOk(false);
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/ping`);
+      setBackendOk(res.ok);
+    } catch (err) {
+      console.log('Backend connectivity check failed:', err.message);
+      setBackendOk(false);
+    }
   };
 
   // Basic RSI implementation using a simple moving average of gains and
@@ -444,7 +473,16 @@ export default function App() {
       const priceRes = await fetch(
         `https://min-api.cryptocompare.com/data/price?fsym=${ccSymbol}&tsyms=USD`
       );
-      const priceData = await priceRes.json();
+      if (!priceRes.ok) {
+        throw new Error(`Price API ${priceRes.status}`);
+      }
+      const priceRaw = await priceRes.text();
+      let priceData;
+      try {
+        priceData = JSON.parse(priceRaw);
+      } catch {
+        throw new Error('Invalid price JSON');
+      }
       const price = priceData.USD;
 
       if (!price || isNaN(price)) {
@@ -455,7 +493,16 @@ export default function App() {
       const accountRes = await fetch(`${ALPACA_BASE_URL}/account`, {
         headers: HEADERS,
       });
-      const accountData = await accountRes.json();
+      if (!accountRes.ok) {
+        throw new Error(`Account API ${accountRes.status}`);
+      }
+      const accountRaw = await accountRes.text();
+      let accountData;
+      try {
+        accountData = JSON.parse(accountRaw);
+      } catch {
+        throw new Error('Invalid account JSON');
+      }
       const cash = parseFloat(accountData.cash || 0);
       const cashWithdrawable = parseFloat(accountData.cash_withdrawable || 0);
       const portfolioValue = parseFloat(accountData.portfolio_value || '0');
@@ -597,6 +644,7 @@ export default function App() {
   const loadData = async () => {
     if (isLoading) return; // Prevent overlapping refreshes
     setIsLoading(true);
+    checkConnectivity();
     // Log whenever a refresh cycle begins
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
@@ -626,13 +674,29 @@ export default function App() {
             `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${asset.cc || asset.symbol}&tsym=USD&limit=52&aggregate=15`
           ),
         ]);
-        // Price
-        const priceData = await priceRes.json();
+        if (!priceRes.ok) {
+          throw new Error(`Price API ${priceRes.status}`);
+        }
+        if (!histoRes.ok) {
+          throw new Error(`Histo API ${histoRes.status}`);
+        }
+        const priceRaw = await priceRes.text();
+        let priceData;
+        try {
+          priceData = JSON.parse(priceRaw);
+        } catch {
+          throw new Error('Invalid price JSON');
+        }
         if (typeof priceData.USD === 'number') {
           token.price = priceData.USD;
         }
-        // Chart data
-        const histoData = await histoRes.json();
+        const histoRaw = await histoRes.text();
+        let histoData;
+        try {
+          histoData = JSON.parse(histoRaw);
+        } catch {
+          throw new Error('Invalid history JSON');
+        }
         const histoBars = Array.isArray(histoData?.Data?.Data)
           ? histoData.Data.Data
           : [];
@@ -701,25 +765,16 @@ export default function App() {
     };
   }, []);
 
-  // Kick off a data load on mount
+  // Kick off a data load and connectivity check on mount
   useEffect(() => {
     loadData();
-    (async () => {
-      try {
-        const res = await fetch('https://paper-api.alpaca.markets/v2/account', { headers: HEADERS });
-        const account = await res.json();
-        console.log('[ALPACA CONNECTED]', account.account_number, 'Equity:', account.equity);
-        showNotification('✅ Connected to Alpaca');
-      } catch (err) {
-        console.error('[ALPACA CONNECTION FAILED]', err);
-        showNotification('❌ Alpaca API Error');
-      }
-    })();
+    checkConnectivity();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
     loadData();
+    checkConnectivity();
   };
 
   const renderCard = (asset) => {
@@ -776,6 +831,11 @@ export default function App() {
       contentContainerStyle={[styles.container, darkMode && styles.containerDark]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
+      <View style={styles.banner}>
+        <Text style={styles.bannerText}>
+          Alpaca {alpacaOk ? '✅' : alpacaOk === false ? '❌' : '...'} | Backend {backendOk ? '✅' : backendOk === false ? '❌' : '...'}
+        </Text>
+      </View>
       <View style={styles.row}>
         <Switch value={darkMode} onValueChange={setDarkMode} />
         <Text style={[styles.title, darkMode && styles.titleDark]}>🎭 Bullish or Bust!</Text>
@@ -883,4 +943,11 @@ const styles = StyleSheet.create({
     zIndex: 998,
   },
   logText: { color: '#fff', fontSize: 12 },
+  banner: {
+    padding: 6,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  bannerText: { color: '#fff' },
 });
