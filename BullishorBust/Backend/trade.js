@@ -26,6 +26,7 @@ function sleep(ms) {
 // Places a limit buy order first, then a limit sell after the buy is filled.
 async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   // submit the limit buy order
+  console.log('Attempting to place buy for', symbol);
   const buyRes = await axios.post(
     `${BASE_URL}/v2/orders`,
     {
@@ -39,6 +40,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
     },
     { headers }
   );
+  console.log('Buy order response:', buyRes.data);
 
   const buyOrder = buyRes.data;
 
@@ -104,7 +106,8 @@ async function getAccountInfo() {
 
 // Round quantities to Alpaca's supported crypto precision
 function roundQty(qty) {
-  return parseFloat(Number(qty).toFixed(8));
+  const factor = 1e6;
+  return Math.floor(qty * factor) / factor;
 }
 
 // Round prices to two decimals
@@ -135,6 +138,7 @@ async function placeMarketBuyThenSell(symbol) {
     return { skipped: true };
   }
 
+  console.log('Attempting to place buy for', symbol);
   console.log(`trade_executed ${symbol} for $${notional}`);
 
   const buyRes = await axios.post(
@@ -148,7 +152,7 @@ async function placeMarketBuyThenSell(symbol) {
     },
     { headers }
   );
-
+  console.log('Buy order response:', buyRes.data);
   const buyOrder = buyRes.data;
 
   // Wait for fill
