@@ -65,6 +65,9 @@ const CRYPTO_TIME_IN_FORCE = 'gtc';
 
 // Track tokens that ran out of funds this cycle
 let perSymbolFundsLock = {};
+// Track last seen prices and stagnation counts for exit logic
+let lastPrices = {};
+let stagnationCounters = {};
 
 // Allow components to subscribe to log entries so they can display them
 let logSubscriber = null;
@@ -210,6 +213,20 @@ export default function App() {
     return { macd: macdLine[macdLine.length - 1], signal };
   };
 
+  // Generic EMA calculator used for trend filters
+  const calcEMA = (closes, period) => {
+    if (!Array.isArray(closes) || closes.length < period) return null;
+    const k = 2 / (period + 1);
+    let ema = closes[0];
+    for (let i = 1; i < closes.length; i++) {
+      ema = closes[i] * k + ema * (1 - k);
+    }
+    return ema;
+  };
+
+  const calcEMA9 = (closes) => calcEMA(closes, 9);
+  const calcEMA21 = (closes) => calcEMA(closes, 21);
+
   // Retrieve the current position for a given symbol.  Returns null if
   // nothing is held or if the request fails.
   const getPositionInfo = async (symbol) => {
@@ -320,7 +337,10 @@ export default function App() {
       return;
     }
 
-    const limit_price = (basis * 1.0025).toFixed(5); // 0.25% profit target
+    const stagnation = stagnationCounters[symbol] || 0;
+    const limit_price = (
+      stagnation >= 3 ? basis + 0.0001 : basis * 1.0025
+    ).toFixed(5); // 0.25% or breakeven
 
     const limitSell = {
       symbol,
@@ -335,6 +355,7 @@ export default function App() {
       qty,
       basis,
       limit_price,
+      stagnation,
     });
     showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty.toFixed(6)}`);
 
@@ -408,8 +429,40 @@ export default function App() {
       const priceData = await priceRes.json();
       const price = priceData?.USD;
 
+      // Fetch bid/ask to compute spread
+      let ask = null;
+      let bid = null;
+      try {
+        const spreadRes = await fetch(
+          `https://min-api.cryptocompare.com/data/top/exchanges/full?fsym=${ccSymbol}&tsym=USD`
+        );
+        const spreadData = await spreadRes.json();
+        const ex = spreadData?.Data?.Exchanges?.[0];
+        if (ex) {
+          ask = parseFloat(ex.ASK);
+          bid = parseFloat(ex.BID);
+        }
+      } catch {}
+
       if (!price || isNaN(price)) {
         throw new Error('Invalid price data');
+      }
+
+      if (ask != null && bid != null) {
+        const spread = (ask - bid) / ((ask + bid) / 2);
+        if (spread > 0.0015) {
+          logTradeAction('buy_skip_spread', symbol, { spread, ask, bid });
+          return;
+        }
+      }
+
+      const expectedSellPrice = price * 1.001;
+      if (expectedSellPrice - price < 0.001 * price) {
+        logTradeAction('buy_skip_profit_projection', symbol, {
+          expectedSellPrice,
+          price,
+        });
+        return;
       }
 
       // Get Alpaca account info
@@ -570,7 +623,11 @@ export default function App() {
         rsi: null,
         macd: null,
         signal: null,
+        macdHistogram: null,
         signalDiff: null,
+        ema9: null,
+        ema21: null,
+        skipReasons: [],
         trend: '🟰',
         entryReady: false,
         watchlist: false,
@@ -590,31 +647,45 @@ export default function App() {
         // Price
         if (typeof priceData?.USD === 'number') {
           token.price = priceData.USD;
+          if (lastPrices[asset.symbol] === token.price) {
+            stagnationCounters[asset.symbol] = (stagnationCounters[asset.symbol] || 0) + 1;
+          } else {
+            stagnationCounters[asset.symbol] = 0;
+          }
+          lastPrices[asset.symbol] = token.price;
         }
 
         const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
         const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
-        if (closes.length >= 20) {
+        if (closes.length >= 21) {
           const r = calcRSI(closes);
+          const rPrev = calcRSI(closes.slice(0, -1));
           const macdRes = calcMACD(closes);
           token.rsi = r != null ? r.toFixed(1) : null;
           token.macd = macdRes.macd;
           token.signal = macdRes.signal;
-          token.signalDiff =
-            token.macd != null && token.signal != null
-              ? token.macd - token.signal
-              : null;
-          const prev = calcMACD(closes.slice(0, -1));
-          token.entryReady = token.macd != null && token.signal != null && token.macd > token.signal;
+          token.macdHistogram =
+            token.macd != null && token.signal != null ? token.macd - token.signal : null;
+          token.signalDiff = token.macdHistogram;
+          token.ema9 = calcEMA9(closes);
+          token.ema21 = calcEMA21(closes);
+          const conditions = {
+            macdSignal: token.macd != null && token.signal != null && token.macd > token.signal,
+            histogram: token.macdHistogram != null && token.macdHistogram > 0,
+            rsiRising: r != null && rPrev != null && r > 40 && r > rPrev,
+            emaCross: token.ema9 != null && token.ema21 != null && token.ema9 > token.ema21,
+          };
+          token.entryReady =
+            conditions.macdSignal && conditions.histogram && conditions.rsiRising && conditions.emaCross;
           token.watchlist =
             token.macd != null &&
             token.signal != null &&
-            prev.macd != null &&
-            token.macd > prev.macd &&
-            token.macd <= token.signal;
+            macdRes.macd > calcMACD(closes.slice(0, -1)).macd &&
+            !token.entryReady;
+          token.skipReasons = Object.keys(conditions).filter((k) => !conditions[k]);
         }
         token.trend = getTrendSymbol(closes);
-        token.missingData = token.price == null || closes.length < 20;
+        token.missingData = token.price == null || closes.length < 21;
         // Automatically place sell for any held positions
         const held = await getPositionInfo(asset.symbol);
         if (held) {
@@ -627,6 +698,7 @@ export default function App() {
         } else {
           logTradeAction('entry_skipped', asset.symbol, {
             entryReady: token.entryReady,
+            reasons: token.skipReasons,
           });
         }
       } catch (err) {
@@ -649,7 +721,7 @@ export default function App() {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    intervalRef.current = setInterval(loadData, 60000);
+    intervalRef.current = setInterval(loadData, 15000);
     // Clean up on unmount
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
