@@ -14,6 +14,11 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
+// Simple health check endpoint so the mobile app can verify connectivity
+app.get('/ping', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // Sequentially place a limit buy order followed by a limit sell once filled
 app.post('/trade', async (req, res) => {
   const { symbol } = req.body;
