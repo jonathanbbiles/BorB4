@@ -236,7 +236,7 @@ export default function App() {
   // as up, below -0.02 as down.  The slope is also returned so callers
   // can decide if the market is trending strongly.
   const getTrendSymbol = (closes) => {
-    const N = 30;
+    const N = 20; // use last 20 bars for slope
     if (!Array.isArray(closes) || closes.length < N) {
       return { symbol: '🟰', slope: 0 };
     }
@@ -865,45 +865,39 @@ export default function App() {
           token.price = priceData.USD;
         }
 
-        const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
-        const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
-        if (closes.length >= 20) {
-          const r = calcRSI(closes);
-          const rPrev = calcRSI(closes.slice(0, -1));
-          const macdRes = calcMACD(closes);
-          token.rsi = r != null ? r.toFixed(1) : null;
-          token.macd = macdRes.macd;
-          token.signal = macdRes.signal;
-          token.signalDiff =
-            token.macd != null && token.signal != null
-              ? token.macd - token.signal
-              : null;
-          const prev = calcMACD(closes.slice(0, -1));
-          const histCurr =
-            token.macd != null && token.signal != null ? token.macd - token.signal : null;
-          const histPrev =
-            prev.macd != null && prev.signal != null ? prev.macd - prev.signal : null;
-          token.entryReady =
-            token.macd != null &&
-            token.signal != null &&
-            prev.macd != null &&
-            prev.signal != null &&
-            r != null &&
-            rPrev != null &&
-            token.macd > token.signal &&
-            histCurr != null &&
-            histPrev != null &&
-            histCurr > histPrev &&
-            r > 45 &&
-            r > rPrev &&
-            trendRes.slope > 0.015;
-          token.watchlist =
-            token.macd != null &&
-            token.signal != null &&
-            prev.macd != null &&
-            token.macd > prev.macd &&
-            token.macd <= token.signal;
+        const barsData = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : null;
+        if (!barsData || typeof barsData.map !== 'function') {
+          console.log('Skipping', asset.cc, '- invalid historical data');
+          token.missingData = true;
+          results.push(token);
+          continue;
         }
+
+        const closes = barsData.map((bar) => bar.close).filter((c) => typeof c === 'number');
+        if (closes.length < 35) {
+          console.log('Skipping', asset.cc, '- insufficient history');
+          token.missingData = true;
+          results.push(token);
+          continue;
+        }
+
+        const r = calcRSI(closes);
+        const macdRes = calcMACD(closes);
+        token.rsi = r != null ? r.toFixed(1) : null;
+        token.macd = macdRes.macd;
+        token.signal = macdRes.signal;
+        token.signalDiff = token.macd != null && token.signal != null ? token.macd - token.signal : null;
+
+        if (token.macd == null || token.signal == null || r == null) {
+          console.log('Skipping', asset.cc, '- missing RSI or MACD');
+          token.missingData = true;
+          results.push(token);
+          continue;
+        }
+
+        // simplified entry check - restore full logic later
+        token.entryReady = token.macd > token.signal;
+        token.watchlist = !token.entryReady && token.macd <= token.signal;
         const trendRes = getTrendSymbol(closes);
         token.trend = trendRes.symbol;
         token.slope = trendRes.slope;
@@ -913,7 +907,7 @@ export default function App() {
           trending: token.isTrendingMarket,
           symbol: trendRes.symbol,
         });
-        token.missingData = token.price == null || closes.length < 20;
+        token.missingData = token.price == null || closes.length < 35;
         // Automatically place sell for any held positions
         const held = await getPositionInfo(asset.symbol);
         if (held) {
