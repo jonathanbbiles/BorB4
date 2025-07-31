@@ -881,17 +881,16 @@ export default function App() {
           token.histSlope = histSlope;
           console.log(`[INDICATORS] ${asset.symbol} zScore=${zScore} histSlope=${histSlope}`);
           logTradeAction('indicator_values', asset.symbol, { zScore, histSlope });
-          token.entryReady =
+        token.entryReady =
             token.macd != null &&
             token.signal != null &&
             histSlope != null &&
             zScore != null &&
             token.macd > token.signal &&
-            histSlope > 0.0005 &&
-            zScore > -1.75 &&
-            zScore < -0.25 &&
-            trendRes.slope > 0.01;
-          token.watchlist =
+            histSlope > 0.0002 &&
+            zScore > -2.5 &&
+            zScore < 0;
+        token.watchlist =
             token.macd != null &&
             token.signal != null &&
             histSlope != null &&
@@ -907,16 +906,13 @@ export default function App() {
         if (held) {
           await placeLimitSell(asset.symbol, token.price, parseFloat(token.rsi));
         }
-        // Auto trade: verify entry conditions and trend state
-        if (token.entryReady && token.isTrendingMarket) {
-          logTradeAction('entry_ready_confirmed', asset.symbol, {
-            trending: token.isTrendingMarket,
-          });
+        // Auto trade when entry conditions are met
+        if (token.entryReady) {
+          logTradeAction('entry_ready_confirmed', asset.symbol);
           await placeOrder(asset.symbol, asset.cc, false, token.slope);
         } else {
           logTradeAction('entry_skipped', asset.symbol, {
             entryReady: token.entryReady,
-            trending: token.isTrendingMarket,
           });
         }
       } catch (err) {
