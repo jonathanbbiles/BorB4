@@ -68,8 +68,8 @@ const CRYPTO_TIME_IN_FORCE = 'gtc';
 const COOL_DOWN_MS = 30 * 60 * 1000;
 // Limit buy buffer - 0.1% below current price
 const BUY_LIMIT_BUFFER = 0.999;
-// Profit target for limit sells increased to offset fees (1.75%)
-const PROFIT_TARGET_PERCENT = 0.0175;
+// Minimum post-fee gain target for limit sells (0.15%)
+const SELL_TARGET_MULTIPLIER = 1.0015;
 // Stop loss if price falls 2.5% from entry
 const STOP_LOSS_PERCENT = 0.025;
 
@@ -502,7 +502,39 @@ export default function App() {
       return;
     }
 
-    const limit_price = (basis * (1 + PROFIT_TARGET_PERCENT)).toFixed(5); // 1.25% profit target
+    // Fetch latest price each time to evaluate sell conditions
+    let livePrice = null;
+    try {
+      const cc = symbol.replace('USD', '');
+      const priceRes = await fetch(
+        `https://min-api.cryptocompare.com/data/price?fsym=${cc}&tsyms=USD`
+      );
+      const priceData = await priceRes.json();
+      if (typeof priceData?.USD === 'number') {
+        livePrice = priceData.USD;
+      }
+    } catch (err) {
+      console.warn('Live price fetch failed:', err.message);
+    }
+
+    if (!livePrice || isNaN(livePrice)) {
+      logTradeAction('sell_skip_reason', symbol, { reason: 'price unavailable' });
+      return;
+    }
+
+    const targetPrice = basis * SELL_TARGET_MULTIPLIER;
+    if (livePrice <= targetPrice) {
+      logTradeAction('sell_skip_reason', symbol, {
+        reason: 'price below target',
+        livePrice,
+        targetPrice,
+      });
+      return;
+    }
+
+    const limit_price = (
+      Math.floor(livePrice * 1e5) / 1e5
+    ).toFixed(5);
 
     const stop_price = (basis * (1 - STOP_LOSS_PERCENT)).toFixed(5);
 
