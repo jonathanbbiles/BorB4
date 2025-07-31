@@ -121,32 +121,41 @@ const logTradeAction = async (type, symbol, details = {}) => {
   // }
 };
 
-// List of crypto pairs we want to follow. Each entry defines the
-// Alpaca symbol, the CryptoCompare base symbol used for pricing (cc),
-// and the CoinGecko id.
-const ORIGINAL_TOKENS = [
-  { name: 'BTC/USD', symbol: 'BTCUSD', cc: 'BTC', gecko: 'bitcoin' },
-  { name: 'ETH/USD', symbol: 'ETHUSD', cc: 'ETH', gecko: 'ethereum' },
-  { name: 'SOL/USD', symbol: 'SOLUSD', cc: 'SOL', gecko: 'solana' },
-  { name: 'LTC/USD', symbol: 'LTCUSD', cc: 'LTC', gecko: 'litecoin' },
-  { name: 'BCH/USD', symbol: 'BCHUSD', cc: 'BCH', gecko: 'bitcoin-cash' },
-  { name: 'DOGE/USD', symbol: 'DOGEUSD', cc: 'DOGE', gecko: 'dogecoin' },
-  { name: 'AVAX/USD', symbol: 'AVAXUSD', cc: 'AVAX', gecko: 'avalanche-2' },
-  { name: 'ADA/USD', symbol: 'ADAUSD', cc: 'ADA', gecko: 'cardano' },
+// Full list of cryptocurrencies supported by Alpaca as of July 2025.
+// Each entry defines the Alpaca symbol, the CryptoCompare base symbol
+// used for pricing (cc), and a CoinGecko id.  The gecko id is not
+// currently used in the app but is retained for possible future
+// integrations.
+const ALPACA_TOKENS = [
   { name: 'AAVE/USD', symbol: 'AAVEUSD', cc: 'AAVE', gecko: 'aave' },
-  { name: 'UNI/USD', symbol: 'UNIUSD', cc: 'UNI', gecko: 'uniswap' },
-  { name: 'MATIC/USD', symbol: 'MATICUSD', cc: 'MATIC', gecko: 'matic-network' },
+  { name: 'AVAX/USD', symbol: 'AVAXUSD', cc: 'AVAX', gecko: 'avalanche-2' },
+  { name: 'BAT/USD', symbol: 'BATUSD', cc: 'BAT', gecko: 'basic-attention-token' },
+  { name: 'BCH/USD', symbol: 'BCHUSD', cc: 'BCH', gecko: 'bitcoin-cash' },
+  { name: 'BTC/USD', symbol: 'BTCUSD', cc: 'BTC', gecko: 'bitcoin' },
+  { name: 'CRV/USD', symbol: 'CRVUSD', cc: 'CRV', gecko: 'curve-dao-token' },
+  { name: 'DOGE/USD', symbol: 'DOGEUSD', cc: 'DOGE', gecko: 'dogecoin' },
+  { name: 'DOT/USD', symbol: 'DOTUSD', cc: 'DOT', gecko: 'polkadot' },
+  { name: 'ETH/USD', symbol: 'ETHUSD', cc: 'ETH', gecko: 'ethereum' },
+  { name: 'GRT/USD', symbol: 'GRTUSD', cc: 'GRT', gecko: 'the-graph' },
   { name: 'LINK/USD', symbol: 'LINKUSD', cc: 'LINK', gecko: 'chainlink' },
+  { name: 'LTC/USD', symbol: 'LTCUSD', cc: 'LTC', gecko: 'litecoin' },
+  { name: 'MKR/USD', symbol: 'MKRUSD', cc: 'MKR', gecko: 'maker' },
+  { name: 'PEPE/USD', symbol: 'PEPEUSD', cc: 'PEPE', gecko: 'pepe' },
   { name: 'SHIB/USD', symbol: 'SHIBUSD', cc: 'SHIB', gecko: 'shiba-inu' },
-  { name: 'XRP/USD', symbol: 'XRPUSD', cc: 'XRP', gecko: 'ripple' },
-  { name: 'USDT/USD', symbol: 'USDTUSD', cc: 'USDT', gecko: 'tether' },
+  { name: 'SOL/USD', symbol: 'SOLUSD', cc: 'SOL', gecko: 'solana' },
+  { name: 'SUSHI/USD', symbol: 'SUSHIUSD', cc: 'SUSHI', gecko: 'sushi' },
+  { name: 'TRUMP/USD', symbol: 'TRUMPUSD', cc: 'TRUMP', gecko: 'maga' },
+  { name: 'UNI/USD', symbol: 'UNIUSD', cc: 'UNI', gecko: 'uniswap' },
   { name: 'USDC/USD', symbol: 'USDCUSD', cc: 'USDC', gecko: 'usd-coin' },
-  { name: 'TRX/USD', symbol: 'TRXUSD', cc: 'TRX', gecko: 'tron' },
-  { name: 'ETC/USD', symbol: 'ETCUSD', cc: 'ETC', gecko: 'ethereum-classic' },
+  { name: 'USDG/USD', symbol: 'USDGUSD', cc: 'USDG', gecko: 'usdg' },
+  { name: 'USDT/USD', symbol: 'USDTUSD', cc: 'USDT', gecko: 'tether' },
+  { name: 'XRP/USD', symbol: 'XRPUSD', cc: 'XRP', gecko: 'ripple' },
+  { name: 'XTZ/USD', symbol: 'XTZUSD', cc: 'XTZ', gecko: 'tezos' },
+  { name: 'YFI/USD', symbol: 'YFIUSD', cc: 'YFI', gecko: 'yearn-finance' },
 ];
 
 export default function App() {
-  const [tracked] = useState(ORIGINAL_TOKENS);
+  const [tracked] = useState(ALPACA_TOKENS);
   const [data, setData] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
