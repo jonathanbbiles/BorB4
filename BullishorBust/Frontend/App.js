@@ -827,6 +827,7 @@ export default function App() {
         trend: '🟰',
         isTrendingMarket: false,
         slope: 0,
+        strategy: 'Momentum Mode',
         entryReady: false,
         watchlist: false,
         missingData: false,
@@ -881,16 +882,31 @@ export default function App() {
           token.histSlope = histSlope;
           console.log(`[INDICATORS] ${asset.symbol} zScore=${zScore} histSlope=${histSlope}`);
           logTradeAction('indicator_values', asset.symbol, { zScore, histSlope });
-        token.entryReady =
-            token.macd != null &&
-            token.signal != null &&
-            histSlope != null &&
-            zScore != null &&
-            token.macd > token.signal &&
-            histSlope > 0.0002 &&
-            zScore > -2.5 &&
-            zScore < 0;
-        token.watchlist =
+
+          token.strategy = zScore != null && zScore < -2.0 ? 'Reversion Mode' : 'Momentum Mode';
+
+          if (token.strategy === 'Reversion Mode') {
+            token.entryReady =
+              token.macd != null &&
+              token.signal != null &&
+              histSlope != null &&
+              zScore != null &&
+              token.macd > token.signal &&
+              histSlope > 0 &&
+              zScore < -2.0;
+          } else {
+            token.entryReady =
+              token.macd != null &&
+              token.signal != null &&
+              histSlope != null &&
+              zScore != null &&
+              token.macd > token.signal &&
+              histSlope > 0.0002 &&
+              zScore > -2.5 &&
+              zScore < 0;
+          }
+
+          token.watchlist =
             token.macd != null &&
             token.signal != null &&
             histSlope != null &&
@@ -899,6 +915,7 @@ export default function App() {
             token.macd <= token.signal;
         } else {
           token.entryReady = false;
+          token.strategy = 'Momentum Mode';
         }
         token.missingData = token.price == null || closes.length < 20;
         // Automatically place sell for any held positions
@@ -970,6 +987,7 @@ export default function App() {
         {asset.watchlist && !asset.entryReady && (
           <Text style={styles.watchlist}>🟧 WATCHLIST</Text>
         )}
+        <Text style={styles.strategyLabel}>{asset.strategy}</Text>
         {asset.price != null && <Text>Price: ${asset.price}</Text>}
         {asset.rsi != null && <Text>RSI: {asset.rsi}</Text>}
         {asset.zscore != null && (
@@ -1115,6 +1133,7 @@ const styles = StyleSheet.create({
   noData: { textAlign: 'center', marginTop: 20, fontStyle: 'italic', color: '#777' },
   entryReady: { color: 'green', fontWeight: 'bold' },
   watchlist: { color: '#FFA500', fontWeight: 'bold' },
+  strategyLabel: { color: '#005eff', fontWeight: 'bold' },
   waiting: { alignItems: 'center', marginTop: 20 },
   sectionHeader: { fontSize: 16, fontWeight: 'bold', marginBottom: 5, marginTop: 10 },
   missing: { color: 'red', fontStyle: 'italic' },
