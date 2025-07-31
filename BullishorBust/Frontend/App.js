@@ -121,32 +121,12 @@ const logTradeAction = async (type, symbol, details = {}) => {
   // }
 };
 
-// List of crypto pairs we want to follow. Each entry defines the
-// Alpaca symbol, the CryptoCompare base symbol used for pricing (cc),
-// and the CoinGecko id.
-const ORIGINAL_TOKENS = [
-  { name: 'BTC/USD', symbol: 'BTCUSD', cc: 'BTC', gecko: 'bitcoin' },
-  { name: 'ETH/USD', symbol: 'ETHUSD', cc: 'ETH', gecko: 'ethereum' },
-  { name: 'SOL/USD', symbol: 'SOLUSD', cc: 'SOL', gecko: 'solana' },
-  { name: 'LTC/USD', symbol: 'LTCUSD', cc: 'LTC', gecko: 'litecoin' },
-  { name: 'BCH/USD', symbol: 'BCHUSD', cc: 'BCH', gecko: 'bitcoin-cash' },
-  { name: 'DOGE/USD', symbol: 'DOGEUSD', cc: 'DOGE', gecko: 'dogecoin' },
-  { name: 'AVAX/USD', symbol: 'AVAXUSD', cc: 'AVAX', gecko: 'avalanche-2' },
-  { name: 'ADA/USD', symbol: 'ADAUSD', cc: 'ADA', gecko: 'cardano' },
-  { name: 'AAVE/USD', symbol: 'AAVEUSD', cc: 'AAVE', gecko: 'aave' },
-  { name: 'UNI/USD', symbol: 'UNIUSD', cc: 'UNI', gecko: 'uniswap' },
-  { name: 'MATIC/USD', symbol: 'MATICUSD', cc: 'MATIC', gecko: 'matic-network' },
-  { name: 'LINK/USD', symbol: 'LINKUSD', cc: 'LINK', gecko: 'chainlink' },
-  { name: 'SHIB/USD', symbol: 'SHIBUSD', cc: 'SHIB', gecko: 'shiba-inu' },
-  { name: 'XRP/USD', symbol: 'XRPUSD', cc: 'XRP', gecko: 'ripple' },
-  { name: 'USDT/USD', symbol: 'USDTUSD', cc: 'USDT', gecko: 'tether' },
-  { name: 'USDC/USD', symbol: 'USDCUSD', cc: 'USDC', gecko: 'usd-coin' },
-  { name: 'TRX/USD', symbol: 'TRXUSD', cc: 'TRX', gecko: 'tron' },
-  { name: 'ETC/USD', symbol: 'ETCUSD', cc: 'ETC', gecko: 'ethereum-classic' },
-];
+// Dynamically loaded list of crypto pairs supported by Alpaca and
+// CryptoCompare.  This is populated on app load.
+const ORIGINAL_TOKENS = [];
 
 export default function App() {
-  const [tracked] = useState(ORIGINAL_TOKENS);
+  const [tracked, setTracked] = useState([]);
   const [data, setData] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -165,6 +145,65 @@ export default function App() {
     registerLogSubscriber((entry) => {
       setLogHistory((prev) => [entry, ...prev].slice(0, 5));
     });
+  }, []);
+
+  // Load the list of supported crypto assets from Alpaca and verify
+  // each one is available via CryptoCompare.  Once loaded the tracked
+  // state will be populated and an initial data refresh triggered.
+  useEffect(() => {
+    const loadSupportedTokens = async () => {
+      try {
+        const res = await fetch(
+          `${ALPACA_BASE_URL}/assets?asset_class=crypto`,
+          { headers: HEADERS }
+        );
+        const allAssets = await res.json();
+        const filtered = allAssets.filter(
+          (a) =>
+            a.status === 'active' &&
+            a.tradable === true &&
+            a.symbol.endsWith('USD') &&
+            /^[A-Z]+USD$/.test(a.symbol) &&
+            !a.symbol.includes('-')
+        );
+        const supported = [];
+        for (const asset of filtered) {
+          const base = asset.symbol.replace('USD', '');
+          try {
+            const [pRes, hRes] = await Promise.all([
+              fetch(
+                `https://min-api.cryptocompare.com/data/price?fsym=${base}&tsyms=USD`
+              ),
+              fetch(
+                `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${base}&tsym=USD&limit=1`
+              ),
+            ]);
+            const price = await pRes.json();
+            const hist = await hRes.json();
+            if (
+              typeof price?.USD === 'number' &&
+              Array.isArray(hist?.Data?.Data)
+            ) {
+              supported.push({
+                name: `${base}/USD`,
+                symbol: asset.symbol,
+                cc: base,
+                gecko: '',
+              });
+            }
+          } catch {
+            // Skip tokens that CryptoCompare doesn't support
+          }
+        }
+        setTracked(supported);
+        if (supported.length > 0) {
+          loadData();
+        }
+      } catch (err) {
+        console.error('Failed to load Alpaca supported tokens', err);
+      }
+    };
+    loadSupportedTokens();
   }, []);
 
   // Helper to update the toast notification. Notifications last five seconds
