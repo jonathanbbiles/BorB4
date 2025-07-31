@@ -148,6 +148,8 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [logHistory, setLogHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [portfolioValue, setPortfolioValue] = useState(0);
+  const [dailyChangePercent, setDailyChangePercent] = useState(0);
   const intervalRef = useRef(null);
 
   // Subscribe to log events and keep only the most recent five entries
@@ -747,6 +749,11 @@ export default function App() {
         const res = await fetch('https://paper-api.alpaca.markets/v2/account', { headers: HEADERS });
         const account = await res.json();
         console.log('[ALPACA CONNECTED]', account.account_number, 'Equity:', account.equity);
+        const equity = parseFloat(account.equity ?? '0');
+        const lastEquity = parseFloat(account.last_equity ?? '0');
+        const change = lastEquity ? ((equity - lastEquity) / lastEquity) * 100 : 0;
+        if (!isNaN(equity)) setPortfolioValue(equity);
+        if (!isNaN(change)) setDailyChangePercent(change);
         showNotification('✅ Connected to Alpaca');
       } catch (err) {
         console.error('[ALPACA CONNECTION FAILED]', err);
@@ -795,6 +802,18 @@ export default function App() {
     );
   };
 
+  const PortfolioSummary = () => {
+    const changeColor = dailyChangePercent >= 0 ? 'green' : 'red';
+    const valueText = `$${portfolioValue.toFixed(2)}`;
+    const percentText = `${dailyChangePercent >= 0 ? '+' : ''}${dailyChangePercent.toFixed(2)}%`;
+    return (
+      <View style={styles.portfolioSummary}>
+        <Text style={[styles.portfolioText, darkMode && styles.titleDark]}>Portfolio: {valueText}</Text>
+        <Text style={[styles.portfolioChange, { color: changeColor }]}>{percentText}</Text>
+      </View>
+    );
+  };
+
   // Sort tokens by signal difference descending, falling back to
   // alphabetical sort to create stable ordering.  Null values sort
   // last.
@@ -818,6 +837,7 @@ export default function App() {
         <Switch value={darkMode} onValueChange={setDarkMode} />
         <Text style={[styles.title, darkMode && styles.titleDark]}>🎭 Bullish or Bust!</Text>
       </View>
+      <PortfolioSummary />
       <View style={styles.row}>
         <Text style={[styles.title, darkMode && styles.titleDark]}>Hide Others</Text>
         <Switch value={hideOthers} onValueChange={setHideOthers} />
@@ -921,4 +941,12 @@ const styles = StyleSheet.create({
     zIndex: 998,
   },
   logText: { color: '#fff', fontSize: 12 },
+  portfolioSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  portfolioText: { fontSize: 15, fontWeight: '500', color: '#000' },
+  portfolioChange: { fontSize: 15, fontWeight: '500' },
 });
