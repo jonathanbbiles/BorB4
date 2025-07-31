@@ -246,6 +246,18 @@ export default function App() {
     return { macd: macdLine[macdLine.length - 1], signal };
   };
 
+  // Calculate a simple Z-Score over the last `period` closes
+  const calcZScore = (closes, period = 20) => {
+    if (!Array.isArray(closes) || closes.length < period) return null;
+    const slice = closes.slice(-period);
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const variance =
+      slice.reduce((sum, c) => sum + Math.pow(c - mean, 2), 0) / period;
+    const std = Math.sqrt(variance);
+    if (std === 0) return 0;
+    return (slice[slice.length - 1] - mean) / std;
+  };
+
   // Retrieve the current position for a given symbol.  Returns null if
   // nothing is held or if the request fails.
   const getPositionInfo = async (symbol) => {
@@ -810,6 +822,8 @@ export default function App() {
         macd: null,
         signal: null,
         signalDiff: null,
+        zscore: null,
+        histSlope: null,
         trend: '🟰',
         isTrendingMarket: false,
         slope: 0,
@@ -835,6 +849,16 @@ export default function App() {
 
         const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
         const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
+        const trendRes = getTrendSymbol(closes);
+        token.trend = trendRes.symbol;
+        token.slope = trendRes.slope;
+        token.isTrendingMarket = Math.abs(trendRes.slope) > 0.025;
+        logTradeAction('trend_state', asset.symbol, {
+          slope: trendRes.slope,
+          trending: token.isTrendingMarket,
+          symbol: trendRes.symbol,
+        });
+
         if (closes.length >= 20) {
           const r = calcRSI(closes);
           const macdRes = calcMACD(closes);
@@ -850,34 +874,33 @@ export default function App() {
             token.macd != null && token.signal != null ? token.macd - token.signal : null;
           const histPrev =
             prev.macd != null && prev.signal != null ? prev.macd - prev.signal : null;
+          const histSlope =
+            histCurr != null && histPrev != null ? histCurr - histPrev : null;
+          const zScore = calcZScore(closes);
+          token.zscore = zScore;
+          token.histSlope = histSlope;
+          console.log(`[INDICATORS] ${asset.symbol} zScore=${zScore} histSlope=${histSlope}`);
+          logTradeAction('indicator_values', asset.symbol, { zScore, histSlope });
           token.entryReady =
             token.macd != null &&
             token.signal != null &&
-            prev.macd != null &&
-            prev.signal != null &&
-            r != null &&
+            histSlope != null &&
+            zScore != null &&
             token.macd > token.signal &&
-            histCurr != null &&
-            histPrev != null &&
-            histCurr > histPrev &&
-            r > 40 &&
+            histSlope > 0.0005 &&
+            zScore > -1.75 &&
+            zScore < -0.25 &&
             trendRes.slope > 0.01;
           token.watchlist =
             token.macd != null &&
             token.signal != null &&
-            prev.macd != null &&
+            histSlope != null &&
+            zScore != null &&
             token.macd > prev.macd &&
             token.macd <= token.signal;
+        } else {
+          token.entryReady = false;
         }
-        const trendRes = getTrendSymbol(closes);
-        token.trend = trendRes.symbol;
-        token.slope = trendRes.slope;
-        token.isTrendingMarket = trendRes.slope > 0.025 || trendRes.slope < -0.025;
-        logTradeAction('trend_state', asset.symbol, {
-          slope: trendRes.slope,
-          trending: token.isTrendingMarket,
-          symbol: trendRes.symbol,
-        });
         token.missingData = token.price == null || closes.length < 20;
         // Automatically place sell for any held positions
         const held = await getPositionInfo(asset.symbol);
@@ -953,6 +976,12 @@ export default function App() {
         )}
         {asset.price != null && <Text>Price: ${asset.price}</Text>}
         {asset.rsi != null && <Text>RSI: {asset.rsi}</Text>}
+        {asset.zscore != null && (
+          <Text>Z-Score: {asset.zscore.toFixed(2)}</Text>
+        )}
+        {asset.histSlope != null && (
+          <Text>Hist Slope: {asset.histSlope.toFixed(4)}</Text>
+        )}
         <Text>Trend: {asset.trend}</Text>
         {asset.missingData && (
           <Text style={styles.missing}>⚠️ Missing data</Text>
