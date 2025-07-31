@@ -7,16 +7,17 @@ const app = express();
 app.use(express.json());
 
 app.use(cors());
-const API_KEY = 'PKN4ICO3WECXSLDGXCHC';
-const SECRET_KEY = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
-const BASE_URL = 'https://paper-api.alpaca.markets/v2';
-const DATA_URL = 'https://data.alpaca.markets/v1beta2';
+const API_KEY = process.env.ALPACA_API_KEY;
+const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
+const BASE_URL = process.env.ALPACA_BASE_URL;
+const DATA_URL = process.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v1beta2';
 ;
 const headers = {
   'APCA-API-KEY-ID': API_KEY,
   'APCA-API-SECRET-KEY': SECRET_KEY,
   'Content-Type': 'application/json',
 };
+console.log(`Alpaca credentials loaded for endpoint ${BASE_URL}`);
 
 // Simple health check endpoint so the mobile app can verify connectivity
 app.get('/ping', (req, res) => {
