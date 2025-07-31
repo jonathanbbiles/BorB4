@@ -68,10 +68,18 @@ const CRYPTO_TIME_IN_FORCE = 'gtc';
 const COOL_DOWN_MS = 30 * 60 * 1000;
 // Limit buy buffer - 0.1% below current price
 const BUY_LIMIT_BUFFER = 0.999;
-// Profit target for limit sells (1.25%)
-const PROFIT_TARGET_PERCENT = 0.0125;
+// Profit target for limit sells increased to offset fees (1.75%)
+const PROFIT_TARGET_PERCENT = 0.0175;
 // Stop loss if price falls 2.5% from entry
 const STOP_LOSS_PERCENT = 0.025;
+
+// Refresh interval used throughout the app
+const REFRESH_INTERVAL_MS = 60000;
+
+// Track per-position metadata such as entry timestamp and price
+let positionMeta = {};
+// Track pending limit buy orders for retry logic
+let pendingLimitOrders = {};
 
 // Track tokens that ran out of funds this cycle
 let perSymbolFundsLock = {};
@@ -278,11 +286,127 @@ export default function App() {
     }
   };
 
+  // Force close a position at market price
+  const closePositionMarket = async (symbol, qty) => {
+    if (!qty || qty <= 0) return;
+    const order = {
+      symbol,
+      qty,
+      side: 'sell',
+      type: 'market',
+      time_in_force: CRYPTO_TIME_IN_FORCE,
+    };
+    logTradeAction('forced_exit_attempt', symbol, { qty });
+    try {
+      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify(order),
+      });
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); } catch { data = { raw }; }
+      if (res.ok && data.id) {
+        logTradeAction('forced_exit_success', symbol, { id: data.id });
+        showNotification(`🚨 Forced exit ${symbol}`);
+        delete positionMeta[symbol];
+      } else {
+        const msg = data?.message || raw;
+        logTradeAction('forced_exit_failed', symbol, { status: res.status, reason: msg });
+        showNotification(`❌ Forced exit failed ${symbol}`);
+      }
+    } catch (err) {
+      logTradeAction('forced_exit_error', symbol, { error: err.message });
+    }
+  };
+
+  // Verify a limit buy filled, otherwise retry with market buy
+  const verifyLimitBuyFilled = async (symbol, ccSymbol) => {
+    const pending = pendingLimitOrders[symbol];
+    if (!pending) return;
+    try {
+      const res = await fetch(`${ALPACA_BASE_URL}/orders/${pending.orderId}`, { headers: HEADERS });
+      const data = await res.json();
+      if (data.status === 'filled') {
+        delete pendingLimitOrders[symbol];
+        return;
+      }
+    } catch (err) {
+      // if check fails just exit
+      return;
+    }
+
+    // Fetch fresh data to confirm signal validity
+    try {
+      const priceUrl = `https://min-api.cryptocompare.com/data/price?fsym=${ccSymbol}&tsyms=USD`;
+      const histoUrl = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${ccSymbol}&tsym=USD&limit=52&aggregate=15`;
+      const [pRes, hRes] = await Promise.all([fetch(priceUrl), fetch(histoUrl)]);
+      const priceData = await pRes.json();
+      const histoData = await hRes.json();
+      const price = priceData?.USD;
+      const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
+      const closes = bars.map((b) => b.close).filter((c) => typeof c === 'number');
+      const r = calcRSI(closes);
+      const rPrev = calcRSI(closes.slice(0, -1));
+      const macd = calcMACD(closes);
+      const macdPrev = calcMACD(closes.slice(0, -1));
+      const trend = getTrendSymbol(closes);
+      const signalValid =
+        macd.macd != null &&
+        macd.signal != null &&
+        macdPrev.macd != null &&
+        macdPrev.signal != null &&
+        r != null &&
+        rPrev != null &&
+        macd.macd > macd.signal &&
+        macd.macd - macd.signal > macdPrev.macd - macdPrev.signal &&
+        r > 45 && r > rPrev &&
+        trend.slope > 0.015;
+
+      if (signalValid) {
+        // cancel existing limit
+        await fetch(`${ALPACA_BASE_URL}/orders/${pending.orderId}`, { method: 'DELETE', headers: HEADERS });
+        const order = {
+          symbol,
+          notional: pending.notional,
+          side: 'buy',
+          type: 'market',
+          time_in_force: CRYPTO_TIME_IN_FORCE,
+        };
+        const res2 = await fetch(`${ALPACA_BASE_URL}/orders`, {
+          method: 'POST',
+          headers: HEADERS,
+          body: JSON.stringify(order),
+        });
+        const raw = await res2.text();
+        let data2;
+        try { data2 = JSON.parse(raw); } catch { data2 = { raw }; }
+        if (res2.ok && data2.id) {
+          logTradeAction('buy_retry_market', symbol, { id: data2.id });
+          showNotification(`🔄 Market buy retry ${symbol}`);
+          lastTradeTime[symbol] = Date.now();
+          positionMeta[symbol] = { entryTimestamp: Date.now(), entryPrice: price };
+          delete pendingLimitOrders[symbol];
+          setTimeout(() => placeLimitSell(symbol), 5000);
+        } else {
+          logTradeAction('buy_retry_failed', symbol, { reason: data2.message || raw });
+        }
+      } else {
+        // Signal no longer valid - just cancel the limit
+        await fetch(`${ALPACA_BASE_URL}/orders/${pending.orderId}`, { method: 'DELETE', headers: HEADERS });
+        delete pendingLimitOrders[symbol];
+        logTradeAction('buy_cancel_signal_lost', symbol, {});
+      }
+    } catch (err) {
+      logTradeAction('buy_retry_error', symbol, { error: err.message });
+    }
+  };
+
   // Place a limit sell order using the latest position information from
   // Alpaca. The function silently skips if the quantity is zero or below
   // Alpaca's minimum trade size (~$1 notional). Logs and notifications are
   // emitted for every attempt.
-  const placeLimitSell = async (symbol) => {
+  const placeLimitSell = async (symbol, currentPrice = null, currentRsi = null) => {
     // Always re-fetch the position to ensure we have the live balance
     const position = await getPositionInfo(symbol);
     if (!position) {
@@ -308,6 +432,26 @@ export default function App() {
     }
 
     const qty = Math.floor(qtyRaw * 1e6) / 1e6;
+
+    // Set default meta if missing
+    if (!positionMeta[symbol]) {
+      positionMeta[symbol] = { entryTimestamp: Date.now(), entryPrice: basis };
+    }
+
+    const meta = positionMeta[symbol];
+    const ageMs = Date.now() - meta.entryTimestamp;
+    const priceDiff = currentPrice && meta.entryPrice ? (currentPrice - meta.entryPrice) / meta.entryPrice : null;
+    if (
+      ageMs > 2 * 60 * 60 * 1000 &&
+      priceDiff != null &&
+      Math.abs(priceDiff) < 0.005 &&
+      currentRsi != null &&
+      currentRsi < 50
+    ) {
+      await closePositionMarket(symbol, qty);
+      logTradeAction('forced_exit_age', symbol, { ageMs, priceDiff });
+      return;
+    }
     logTradeAction('sell_qty_confirm', symbol, {
       qtyRequested: qty,
       qtyAvailable: Math.floor(position.available * 1e6) / 1e6,
@@ -431,7 +575,7 @@ export default function App() {
   // map and via checking for open orders on the symbol.  After a
   // successful buy the function will automatically place a limit sell
   // once the position settles.
-  const placeOrder = async (symbol, ccSymbol = symbol, isManual = false) => {
+  const placeOrder = async (symbol, ccSymbol = symbol, isManual = false, slope = 0) => {
     // Cooldown check per symbol
     const now = Date.now();
     if (lastTradeTime[symbol] && now - lastTradeTime[symbol] < COOL_DOWN_MS) {
@@ -505,8 +649,8 @@ export default function App() {
       const EXTRA_BUFFER = 0.01;
       const SAFETY_FACTOR = 1 - PRICE_COLLAR_PERCENT - EXTRA_BUFFER; // e.g. 0.97
 
-      // Determine the maximum allocation based on portfolio size.
-      const targetAllocation = portfolioValue * 0.1;
+      // Determine the maximum allocation based on portfolio size and trend slope
+      const targetAllocation = portfolioValue * (slope >= 0.05 ? 0.05 : 0.1);
       // Use the smaller of target allocation or available cash minus a safety margin
       let allocation = Math.min(targetAllocation, cash - SAFETY_MARGIN);
 
@@ -613,6 +757,9 @@ export default function App() {
         });
         showNotification(`✅ Buy ${symbol} ${qty} @ $${limit_price}`);
         lastTradeTime[symbol] = now;
+        positionMeta[symbol] = { entryTimestamp: now, entryPrice: limit_price };
+        pendingLimitOrders[symbol] = { orderId: result.id, notional, createdAt: now, cc: ccSymbol };
+        setTimeout(() => verifyLimitBuyFilled(symbol, ccSymbol), REFRESH_INTERVAL_MS * 2);
         setTimeout(() => placeLimitSell(symbol), 5000);
       } else {
         logTradeAction('buy_failed', symbol, {
@@ -658,6 +805,7 @@ export default function App() {
         signalDiff: null,
         trend: '🟰',
         isTrendingMarket: false,
+        slope: 0,
         entryReady: false,
         watchlist: false,
         missingData: false,
@@ -682,6 +830,7 @@ export default function App() {
         const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
         if (closes.length >= 20) {
           const r = calcRSI(closes);
+          const rPrev = calcRSI(closes.slice(0, -1));
           const macdRes = calcMACD(closes);
           token.rsi = r != null ? r.toFixed(1) : null;
           token.macd = macdRes.macd;
@@ -691,7 +840,24 @@ export default function App() {
               ? token.macd - token.signal
               : null;
           const prev = calcMACD(closes.slice(0, -1));
-          token.entryReady = token.macd != null && token.signal != null && token.macd > token.signal;
+          const histCurr =
+            token.macd != null && token.signal != null ? token.macd - token.signal : null;
+          const histPrev =
+            prev.macd != null && prev.signal != null ? prev.macd - prev.signal : null;
+          token.entryReady =
+            token.macd != null &&
+            token.signal != null &&
+            prev.macd != null &&
+            prev.signal != null &&
+            r != null &&
+            rPrev != null &&
+            token.macd > token.signal &&
+            histCurr != null &&
+            histPrev != null &&
+            histCurr > histPrev &&
+            r > 45 &&
+            r > rPrev &&
+            trendRes.slope > 0.015;
           token.watchlist =
             token.macd != null &&
             token.signal != null &&
@@ -701,6 +867,7 @@ export default function App() {
         }
         const trendRes = getTrendSymbol(closes);
         token.trend = trendRes.symbol;
+        token.slope = trendRes.slope;
         token.isTrendingMarket = trendRes.slope > 0.04 || trendRes.slope < -0.04;
         logTradeAction('trend_state', asset.symbol, {
           slope: trendRes.slope,
@@ -711,14 +878,14 @@ export default function App() {
         // Automatically place sell for any held positions
         const held = await getPositionInfo(asset.symbol);
         if (held) {
-          await placeLimitSell(asset.symbol);
+          await placeLimitSell(asset.symbol, token.price, parseFloat(token.rsi));
         }
         // Auto trade: verify entry conditions and trend state
         if (token.entryReady && token.isTrendingMarket) {
           logTradeAction('entry_ready_confirmed', asset.symbol, {
             trending: token.isTrendingMarket,
           });
-          await placeOrder(asset.symbol, asset.cc);
+          await placeOrder(asset.symbol, asset.cc, false, token.slope);
         } else {
           logTradeAction('entry_skipped', asset.symbol, {
             entryReady: token.entryReady,
@@ -745,7 +912,7 @@ export default function App() {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    intervalRef.current = setInterval(loadData, 60000);
+    intervalRef.current = setInterval(loadData, REFRESH_INTERVAL_MS);
     // Clean up on unmount
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -790,7 +957,7 @@ export default function App() {
           <Text style={styles.error}>❌ Not tradable: {asset.error}</Text>
         )}
         <Text>{asset.time}</Text>
-        <TouchableOpacity onPress={() => placeOrder(asset.symbol, asset.cc, true)}>
+        <TouchableOpacity onPress={() => placeOrder(asset.symbol, asset.cc, true, asset.slope)}>
           <Text style={styles.buyButton}>Manual BUY</Text>
         </TouchableOpacity>
       </View>
