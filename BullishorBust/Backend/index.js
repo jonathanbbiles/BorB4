@@ -9,7 +9,7 @@ app.use(express.json());
 app.use(cors());
 const API_KEY = process.env.ALPACA_API_KEY;
 const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
-const BASE_URL = process.env.ALPACA_BASE_URL;
+const BASE_URL = 'https://paper-api.alpaca.markets/v2';
 const headers = {
   'APCA-API-KEY-ID': API_KEY,
   'APCA-API-SECRET-KEY': SECRET_KEY,
@@ -24,7 +24,7 @@ app.get('/ping', (req, res) => {
 // Verify Alpaca API connectivity and credentials
 app.get('/ping-alpaca', async (req, res) => {
   try {
-    await axios.get(`${BASE_URL}/v2/account`, { headers });
+    await axios.get(`${BASE_URL}/account`, { headers });
     res.json({ status: 'ok' });
   } catch (err) {
     console.error('Ping Alpaca failed:', err?.response?.data || err.message);
@@ -51,7 +51,7 @@ app.post('/buy', async (req, res) => {
   console.log('Order payload:', order);
 
   try {
-    const response = await axios.post(`${BASE_URL}/v2/orders`, order, {
+    const response = await axios.post(`${BASE_URL}/orders`, order, {
       headers,
     });
     console.log('Alpaca response:', response.data);

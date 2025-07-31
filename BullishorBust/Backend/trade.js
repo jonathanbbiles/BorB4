@@ -3,7 +3,7 @@ const axios = require('axios');
 
 const API_KEY = process.env.ALPACA_API_KEY;
 const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
-const BASE_URL = process.env.ALPACA_BASE_URL || 'https://paper-api.alpaca.markets';
+const BASE_URL = 'https://paper-api.alpaca.markets/v2';
 const DATA_URL = 'https://data.alpaca.markets/v1beta2';
 
 const headers = {
@@ -29,7 +29,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${BASE_URL}/v2/orders`,
+      `${BASE_URL}/orders`,
       {
         symbol,
         qty,
@@ -52,7 +52,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let filledOrder = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const check = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
+      const check = await axios.get(`${BASE_URL}/orders/${buyOrder.id}`, {
         headers,
       });
       filledOrder = check.data;
@@ -75,7 +75,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let sellRes;
   try {
     sellRes = await axios.post(
-      `${BASE_URL}/v2/orders`,
+      `${BASE_URL}/orders`,
       {
         symbol,
         qty: filledOrder.filled_qty,
@@ -113,7 +113,7 @@ async function getLatestPrice(symbol) {
 // Get portfolio value and buying power from the Alpaca account
 async function getAccountInfo() {
   try {
-    const res = await axios.get(`${BASE_URL}/v2/account`, { headers });
+    const res = await axios.get(`${BASE_URL}/account`, { headers });
     const portfolioValue = parseFloat(res.data.portfolio_value);
     const buyingPower = parseFloat(res.data.buying_power);
     const cash = parseFloat(res.data.cash);
@@ -168,7 +168,7 @@ async function placeMarketBuyThenSell(symbol) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${BASE_URL}/v2/orders`,
+      `${BASE_URL}/orders`,
       {
         symbol,
         qty,
@@ -189,7 +189,7 @@ async function placeMarketBuyThenSell(symbol) {
   let filled = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const chk = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
+      const chk = await axios.get(`${BASE_URL}/orders/${buyOrder.id}`, {
         headers,
       });
       filled = chk.data;
@@ -215,7 +215,7 @@ async function placeMarketBuyThenSell(symbol) {
 
   try {
     const sellRes = await axios.post(
-      `${BASE_URL}/v2/orders`,
+      `${BASE_URL}/orders`,
       {
         symbol,
         qty: filled.filled_qty,
