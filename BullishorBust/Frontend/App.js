@@ -121,12 +121,32 @@ const logTradeAction = async (type, symbol, details = {}) => {
   // }
 };
 
-// Dynamically loaded list of crypto pairs supported by Alpaca and
-// CryptoCompare.  This is populated on app load.
-const ORIGINAL_TOKENS = [];
+// List of crypto pairs we want to follow. Each entry defines the
+// Alpaca symbol, the CryptoCompare base symbol used for pricing (cc),
+// and the CoinGecko id.
+const ORIGINAL_TOKENS = [
+  { name: 'BTC/USD', symbol: 'BTCUSD', cc: 'BTC', gecko: 'bitcoin' },
+  { name: 'ETH/USD', symbol: 'ETHUSD', cc: 'ETH', gecko: 'ethereum' },
+  { name: 'SOL/USD', symbol: 'SOLUSD', cc: 'SOL', gecko: 'solana' },
+  { name: 'LTC/USD', symbol: 'LTCUSD', cc: 'LTC', gecko: 'litecoin' },
+  { name: 'BCH/USD', symbol: 'BCHUSD', cc: 'BCH', gecko: 'bitcoin-cash' },
+  { name: 'DOGE/USD', symbol: 'DOGEUSD', cc: 'DOGE', gecko: 'dogecoin' },
+  { name: 'AVAX/USD', symbol: 'AVAXUSD', cc: 'AVAX', gecko: 'avalanche-2' },
+  { name: 'ADA/USD', symbol: 'ADAUSD', cc: 'ADA', gecko: 'cardano' },
+  { name: 'AAVE/USD', symbol: 'AAVEUSD', cc: 'AAVE', gecko: 'aave' },
+  { name: 'UNI/USD', symbol: 'UNIUSD', cc: 'UNI', gecko: 'uniswap' },
+  { name: 'MATIC/USD', symbol: 'MATICUSD', cc: 'MATIC', gecko: 'matic-network' },
+  { name: 'LINK/USD', symbol: 'LINKUSD', cc: 'LINK', gecko: 'chainlink' },
+  { name: 'SHIB/USD', symbol: 'SHIBUSD', cc: 'SHIB', gecko: 'shiba-inu' },
+  { name: 'XRP/USD', symbol: 'XRPUSD', cc: 'XRP', gecko: 'ripple' },
+  { name: 'USDT/USD', symbol: 'USDTUSD', cc: 'USDT', gecko: 'tether' },
+  { name: 'USDC/USD', symbol: 'USDCUSD', cc: 'USDC', gecko: 'usd-coin' },
+  { name: 'TRX/USD', symbol: 'TRXUSD', cc: 'TRX', gecko: 'tron' },
+  { name: 'ETC/USD', symbol: 'ETCUSD', cc: 'ETC', gecko: 'ethereum-classic' },
+];
 
 export default function App() {
-  const [tracked, setTracked] = useState([]);
+  const [tracked] = useState(ORIGINAL_TOKENS);
   const [data, setData] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -145,65 +165,6 @@ export default function App() {
     registerLogSubscriber((entry) => {
       setLogHistory((prev) => [entry, ...prev].slice(0, 5));
     });
-  }, []);
-
-  // Load the list of supported crypto assets from Alpaca and verify
-  // each one is available via CryptoCompare.  Once loaded the tracked
-  // state will be populated and an initial data refresh triggered.
-  useEffect(() => {
-    const loadSupportedTokens = async () => {
-      try {
-        const res = await fetch(
-          `${ALPACA_BASE_URL}/assets?asset_class=crypto`,
-          { headers: HEADERS }
-        );
-        const allAssets = await res.json();
-        const filtered = allAssets.filter(
-          (a) =>
-            a.status === 'active' &&
-            a.tradable === true &&
-            a.symbol.endsWith('USD') &&
-            /^[A-Z]+USD$/.test(a.symbol) &&
-            !a.symbol.includes('-')
-        );
-        const supported = [];
-        for (const asset of filtered) {
-          const base = asset.symbol.replace('USD', '');
-          try {
-            const [pRes, hRes] = await Promise.all([
-              fetch(
-                `https://min-api.cryptocompare.com/data/price?fsym=${base}&tsyms=USD`
-              ),
-              fetch(
-                `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${base}&tsym=USD&limit=1`
-              ),
-            ]);
-            const price = await pRes.json();
-            const hist = await hRes.json();
-            if (
-              typeof price?.USD === 'number' &&
-              Array.isArray(hist?.Data?.Data)
-            ) {
-              supported.push({
-                name: `${base}/USD`,
-                symbol: asset.symbol,
-                cc: base,
-                gecko: '',
-              });
-            }
-          } catch {
-            // Skip tokens that CryptoCompare doesn't support
-          }
-        }
-        setTracked(supported);
-        if (supported.length > 0) {
-          loadData();
-        }
-      } catch (err) {
-        console.error('Failed to load Alpaca supported tokens', err);
-      }
-    };
-    loadSupportedTokens();
   }, []);
 
   // Helper to update the toast notification. Notifications last five seconds
@@ -236,7 +197,7 @@ export default function App() {
   // as up, below -0.02 as down.  The slope is also returned so callers
   // can decide if the market is trending strongly.
   const getTrendSymbol = (closes) => {
-    const N = 20; // use last 20 bars for slope
+    const N = 30;
     if (!Array.isArray(closes) || closes.length < N) {
       return { symbol: '🟰', slope: 0 };
     }
@@ -865,39 +826,45 @@ export default function App() {
           token.price = priceData.USD;
         }
 
-        const barsData = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : null;
-        if (!barsData || typeof barsData.map !== 'function') {
-          console.log('Skipping', asset.cc, '- invalid historical data');
-          token.missingData = true;
-          results.push(token);
-          continue;
+        const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
+        const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
+        if (closes.length >= 20) {
+          const r = calcRSI(closes);
+          const rPrev = calcRSI(closes.slice(0, -1));
+          const macdRes = calcMACD(closes);
+          token.rsi = r != null ? r.toFixed(1) : null;
+          token.macd = macdRes.macd;
+          token.signal = macdRes.signal;
+          token.signalDiff =
+            token.macd != null && token.signal != null
+              ? token.macd - token.signal
+              : null;
+          const prev = calcMACD(closes.slice(0, -1));
+          const histCurr =
+            token.macd != null && token.signal != null ? token.macd - token.signal : null;
+          const histPrev =
+            prev.macd != null && prev.signal != null ? prev.macd - prev.signal : null;
+          token.entryReady =
+            token.macd != null &&
+            token.signal != null &&
+            prev.macd != null &&
+            prev.signal != null &&
+            r != null &&
+            rPrev != null &&
+            token.macd > token.signal &&
+            histCurr != null &&
+            histPrev != null &&
+            histCurr > histPrev &&
+            r > 45 &&
+            r > rPrev &&
+            trendRes.slope > 0.015;
+          token.watchlist =
+            token.macd != null &&
+            token.signal != null &&
+            prev.macd != null &&
+            token.macd > prev.macd &&
+            token.macd <= token.signal;
         }
-
-        const closes = barsData.map((bar) => bar.close).filter((c) => typeof c === 'number');
-        if (closes.length < 35) {
-          console.log('Skipping', asset.cc, '- insufficient history');
-          token.missingData = true;
-          results.push(token);
-          continue;
-        }
-
-        const r = calcRSI(closes);
-        const macdRes = calcMACD(closes);
-        token.rsi = r != null ? r.toFixed(1) : null;
-        token.macd = macdRes.macd;
-        token.signal = macdRes.signal;
-        token.signalDiff = token.macd != null && token.signal != null ? token.macd - token.signal : null;
-
-        if (token.macd == null || token.signal == null || r == null) {
-          console.log('Skipping', asset.cc, '- missing RSI or MACD');
-          token.missingData = true;
-          results.push(token);
-          continue;
-        }
-
-        // simplified entry check - restore full logic later
-        token.entryReady = token.macd > token.signal;
-        token.watchlist = !token.entryReady && token.macd <= token.signal;
         const trendRes = getTrendSymbol(closes);
         token.trend = trendRes.symbol;
         token.slope = trendRes.slope;
@@ -907,7 +874,7 @@ export default function App() {
           trending: token.isTrendingMarket,
           symbol: trendRes.symbol,
         });
-        token.missingData = token.price == null || closes.length < 35;
+        token.missingData = token.price == null || closes.length < 20;
         // Automatically place sell for any held positions
         const held = await getPositionInfo(asset.symbol);
         if (held) {
