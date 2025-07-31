@@ -636,6 +636,17 @@ export default function App() {
     // Log whenever a refresh cycle begins
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
+    try {
+      const res = await fetch('https://paper-api.alpaca.markets/v2/account', { headers: HEADERS });
+      const account = await res.json();
+      const equity = parseFloat(account.equity ?? '0');
+      const lastEquity = parseFloat(account.last_equity ?? '0');
+      const change = lastEquity ? ((equity - lastEquity) / lastEquity) * 100 : 0;
+      if (!isNaN(equity)) setPortfolioValue(equity);
+      if (!isNaN(change)) setDailyChangePercent(change);
+    } catch (err) {
+      console.error('[ALPACA ACCOUNT FAILED]', err);
+    }
     const results = [];
     for (const asset of tracked) {
       const token = {
@@ -744,22 +755,6 @@ export default function App() {
   // Kick off a data load on mount
   useEffect(() => {
     loadData();
-    (async () => {
-      try {
-        const res = await fetch('https://paper-api.alpaca.markets/v2/account', { headers: HEADERS });
-        const account = await res.json();
-        console.log('[ALPACA CONNECTED]', account.account_number, 'Equity:', account.equity);
-        const equity = parseFloat(account.equity ?? '0');
-        const lastEquity = parseFloat(account.last_equity ?? '0');
-        const change = lastEquity ? ((equity - lastEquity) / lastEquity) * 100 : 0;
-        if (!isNaN(equity)) setPortfolioValue(equity);
-        if (!isNaN(change)) setDailyChangePercent(change);
-        showNotification('✅ Connected to Alpaca');
-      } catch (err) {
-        console.error('[ALPACA CONNECTION FAILED]', err);
-        showNotification('❌ Alpaca API Error');
-      }
-    })();
   }, []);
 
   const onRefresh = () => {
@@ -835,13 +830,10 @@ export default function App() {
     >
       <View style={styles.row}>
         <Switch value={darkMode} onValueChange={setDarkMode} />
+        <Switch value={hideOthers} onValueChange={setHideOthers} />
         <Text style={[styles.title, darkMode && styles.titleDark]}>🎭 Bullish or Bust!</Text>
       </View>
       <PortfolioSummary />
-      <View style={styles.row}>
-        <Text style={[styles.title, darkMode && styles.titleDark]}>Hide Others</Text>
-        <Switch value={hideOthers} onValueChange={setHideOthers} />
-      </View>
       <Text style={styles.sectionHeader}>✅ Entry Ready</Text>
       {entryReadyTokens.length > 0 ? (
         <View style={styles.cardGrid}>{entryReadyTokens.map(renderCard)}</View>
