@@ -48,11 +48,10 @@ import {
 
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
-// For temporary testing we hardcode the credentials. Remove before committing
-// to production.
-const ALPACA_KEY = 'PKN4ICO3WECXSLDGXCHC';
-const ALPACA_SECRET = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
-const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
+// Alpaca credentials are loaded from environment variables
+const ALPACA_KEY = process.env.ALPACA_API_KEY;
+const ALPACA_SECRET = process.env.ALPACA_SECRET_KEY;
+const ALPACA_BASE_URL = process.env.ALPACA_BASE_URL;
 
 const HEADERS = {
   'APCA-API-KEY-ID': ALPACA_KEY,
@@ -168,6 +167,7 @@ export default function App() {
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [dailyChangePercent, setDailyChangePercent] = useState(0);
   const intervalRef = useRef(null);
+  console.log(`Alpaca credentials loaded for endpoint ${ALPACA_BASE_URL}`);
 
   // Subscribe to log events and keep only the most recent five entries
   useEffect(() => {
@@ -835,7 +835,7 @@ export default function App() {
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
     try {
-      const res = await fetch('https://paper-api.alpaca.markets/v2/account', { headers: HEADERS });
+      const res = await fetch(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
       const account = await res.json();
       const equity = parseFloat(account.equity ?? '0');
       const lastEquity = parseFloat(account.last_equity ?? '0');
