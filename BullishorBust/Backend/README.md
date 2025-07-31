@@ -8,5 +8,9 @@ It also exposes `/ping` and `/ping-alpaca` health check routes.
 The server includes CORS support so it can be called from Expo Go.
 
 1. `npm install`
-2. Create a `.env` file with your Alpaca API keys.
+2. Create a `.env` file with your Alpaca API keys:
+   ```
+   ALPACA_API_KEY=PKN4ICO3WECXSLDGXCHC
+   ALPACA_SECRET_KEY=
+   ```
 3. `npm start`
