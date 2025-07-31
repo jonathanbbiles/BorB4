@@ -356,7 +356,6 @@ export default function App() {
       const bars = Array.isArray(histoData?.Data?.Data) ? histoData.Data.Data : [];
       const closes = bars.map((b) => b.close).filter((c) => typeof c === 'number');
       const r = calcRSI(closes);
-      const rPrev = calcRSI(closes.slice(0, -1));
       const macd = calcMACD(closes);
       const macdPrev = calcMACD(closes.slice(0, -1));
       const trend = getTrendSymbol(closes);
@@ -366,11 +365,10 @@ export default function App() {
         macdPrev.macd != null &&
         macdPrev.signal != null &&
         r != null &&
-        rPrev != null &&
         macd.macd > macd.signal &&
         macd.macd - macd.signal > macdPrev.macd - macdPrev.signal &&
-        r > 45 && r > rPrev &&
-        trend.slope > 0.015;
+        r > 40 &&
+        trend.slope > 0.01;
 
       if (signalValid) {
         // cancel existing limit
@@ -839,7 +837,6 @@ export default function App() {
         const closes = bars.map((bar) => bar.close).filter((c) => typeof c === 'number');
         if (closes.length >= 20) {
           const r = calcRSI(closes);
-          const rPrev = calcRSI(closes.slice(0, -1));
           const macdRes = calcMACD(closes);
           token.rsi = r != null ? r.toFixed(1) : null;
           token.macd = macdRes.macd;
@@ -859,14 +856,12 @@ export default function App() {
             prev.macd != null &&
             prev.signal != null &&
             r != null &&
-            rPrev != null &&
             token.macd > token.signal &&
             histCurr != null &&
             histPrev != null &&
             histCurr > histPrev &&
-            r > 45 &&
-            r > rPrev &&
-            trendRes.slope > 0.015;
+            r > 40 &&
+            trendRes.slope > 0.01;
           token.watchlist =
             token.macd != null &&
             token.signal != null &&
@@ -877,7 +872,7 @@ export default function App() {
         const trendRes = getTrendSymbol(closes);
         token.trend = trendRes.symbol;
         token.slope = trendRes.slope;
-        token.isTrendingMarket = trendRes.slope > 0.04 || trendRes.slope < -0.04;
+        token.isTrendingMarket = trendRes.slope > 0.025 || trendRes.slope < -0.025;
         logTradeAction('trend_state', asset.symbol, {
           slope: trendRes.slope,
           trending: token.isTrendingMarket,
