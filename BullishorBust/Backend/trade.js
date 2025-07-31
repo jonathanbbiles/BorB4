@@ -3,7 +3,8 @@ const axios = require('axios');
 
 const API_KEY = process.env.ALPACA_API_KEY;
 const SECRET_KEY = process.env.ALPACA_SECRET_KEY;
-const BASE_URL = 'https://paper-api.alpaca.markets/v2';
+const BASE_URL = process.env.ALPACA_BASE_URL ||
+  'https://paper-api.alpaca.markets/v2';
 const DATA_URL = 'https://data.alpaca.markets/v1beta2';
 
 const headers = {
