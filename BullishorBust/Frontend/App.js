@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -12,51 +11,47 @@ import {
 } from 'react-native';
 
 /*
- * This component implements a simple crypto trading dashboard for Alpaca.  It
- * tracks a predefined list of crypto pairs, calculates a handful of
- * technical indicators (RSI, MACD and a simple linear‐regression trend
- * indicator) from minute data provided by CoinGecko and then exposes
- * manual and automatic trade actions against the Alpaca paper trading API.
- *
- * This version addresses a critical bug in the buy logic.  In prior
- * iterations the notional used for a market buy order was derived from
- * the raw target allocation rather than the adjusted allocation that
- * accounted for safety margins and buffers.  As a result, the app would
- * occasionally request more notional value than the account’s available
- * cash, leading to order rejections.  The fix ensures that the final
- * notional is based off of the protected allocation and never exceeds
- * the appropriate buying power for crypto trades.
- *
- * In addition, crypto trades rely on settled cash only.  Alpaca
- * exposes a `non_marginable_buying_power` attribute which reflects the
- * amount of cash that can be used to purchase crypto.  According to
- * Alpaca’s support documentation, securities transactions take two
- * business days to settle, so cash resulting from an equity sale may
- * not be immediately available for crypto orders.  We therefore use
- * `non_marginable_buying_power` (falling back to `buying_power` or
- * `cash` if it’s unavailable) when computing how much capital can be
- * allocated to a crypto purchase【247783379990709†L355-L359】.
- *
- * Finally, Alpaca automatically applies a 2 % price collar to market
- * orders to protect users from rapid price movements.  To ensure that
- * our notional requests never overshoot the available cash after this
- * collar is applied, we incorporate an extra buffer into the
- * allocation calculation.  Specifically, the safety factor reduces
- * the prospective allocation by an amount greater than the collar
- * (3 % total) which, combined with a small fixed safety margin, keeps
- * the eventual limit price well within the account’s buying power.
- */
+* This component implements a simple crypto trading dashboard for Alpaca.  It
+* tracks a predefined list of crypto pairs, calculates a handful of
+* technical indicators (RSI, MACD and a simple linear‐regression trend
+* indicator) from minute data provided by CryptoCompare and then exposes
+* manual and automatic trade actions against the Alpaca paper trading API.
+*
+* Key improvements over the original implementation:
+*  - All network interactions are wrapped in try/catch blocks and return
+*    sensible defaults on failure to ensure the UI never crashes because
+*    of a bad response.
+*  - A small concurrency guard prevents multiple overlapping refreshes
+*    from running at the same time.  This is important because the
+*    component refreshes itself on a timer when auto trading is enabled.
+*  - We added a helper to check for open orders on a symbol before
+*    attempting to place a new trade.  Without this guard duplicate buy
+*    orders could be fired off if an earlier order was still pending.
+*  - The refresh interval is stored in a ref and cleaned up properly when
+*    the component unmounts or when auto trading is toggled off.
+*  - A handful of comments have been sprinkled throughout the code to
+*    explain why certain decisions were made.  Feel free to remove them
+*    for production use.
+*/
 
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
-// Alpaca and backend credentials loaded from Expo config
-const {
-  EXPO_PUBLIC_BACKEND_URL: BACKEND_URL = 'http://localhost:3000/api',
-} = Constants.expoConfig?.extra || {};
+// Alpaca base URL remains the paper trading endpoint.
+const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
 
-const HEADERS = {
+// Helper to build Alpaca auth headers from Expo environment variables
+const getAlpacaHeaders = () => ({
+  'APCA-API-KEY-ID': process.env.EXPO_PUBLIC_ALPACA_KEY,
+  'APCA-API-SECRET-KEY': process.env.EXPO_PUBLIC_ALPACA_SECRET,
   'Content-Type': 'application/json',
-};
+});
+
+// Backend server for manual trade requests. Default to local dev server
+// but allow override via Expo env var
+// When running on a real device "localhost" will not resolve to your
+// development machine. Use an Expo or ngrok tunnel URL instead.
+// Backend server for trade requests
+const BACKEND_URL = 'https://borb4.onrender.com';
 
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
