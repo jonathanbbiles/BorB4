@@ -12,9 +12,8 @@ const HEADERS = {
 
 
 //require('dotenv').config();
-//const express = require('express');
-//const axios = require('axios');
-//const router = express.Router();
+const express = require('express');
+const router = express.Router();
 
 //const {
 //  ALPACA_API_KEY: API_KEY,
@@ -23,7 +22,7 @@ const HEADERS = {
 //  ALPACA_DATA_URL: DATA_URL,
 //} = process.env;
 
-//const headers = {
+//const HEADERS = {
 //  'APCA-API-KEY-ID': API_KEY,
 //  'APCA-API-SECRET-KEY': SECRET_KEY,
 //  'Content-Type': 'application/json',
@@ -51,7 +50,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${ALPACA_BASE_URL}/orders`,
       {
         symbol,
         qty,
@@ -60,7 +59,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
         time_in_force: 'gtc', // crypto orders must be GTC
         limit_price: parseFloat(limitPrice),
       },
-      { headers }
+      { HEADERS }
     );
     console.log('Buy order response:', buyRes.);
     buyOrder = buyRes.;
@@ -74,8 +73,8 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let filledOrder = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const check = await axios.get(`${BASE_URL}/orders/${buyOrder.id}`, {
-        headers,
+      const check = await axios.get(`${ALPACA_BASE_URL}/orders/${buyOrder.id}`, {
+        HEADERS,
       });
       filledOrder = check.;
       if (filledOrder.status === 'filled') break;
@@ -97,7 +96,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let sellRes;
   try {
     sellRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${ALPACA_BASE_URL}/orders`,
       {
         symbol,
         qty: parseFloat(filledOrder.filled_qty),
@@ -106,7 +105,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
         time_in_force: 'gtc', // match the buy order's time in force
         limit_price: parseFloat(sellPrice),
       },
-      { headers }
+      { HEADERS }
     );
   } catch (err) {
     console.error('Sell order failed:', err?.response?. || err.message);
@@ -120,8 +119,8 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
 async function getLatestPrice(symbol) {
   try {
     const res = await axios.get(
-      `${BASE_URL}/crypto/latest/trades?symbols=${symbol}`,
-      { headers }
+      `${ALPACA_BASE_URL}/crypto/latest/trades?symbols=${symbol}`,
+      { HEADERS }
     );
     const trade = res..trades && res..trades[symbol];
     if (!trade) throw new Error(`Price not available for ${symbol}`);
@@ -135,7 +134,7 @@ async function getLatestPrice(symbol) {
 // Get portfolio value and buying power from the Alpaca account
 async function getAccountInfo() {
   try {
-    const res = await axios.get(`${BASE_URL}/account`, { headers });
+    const res = await axios.get(`${ALPACA_BASE_URL}/account`, { HEADERS });
     const portfolioValue = parseFloat(res.data.portfolio_value);
     const buyingPower = parseFloat(res.data.buying_power);
     const cash = parseFloat(res.data.cash);
@@ -190,7 +189,7 @@ async function placeMarketBuyThenSell(symbol) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${ALPACA_BASE_URL}/orders`,
       {
         symbol,
         qty,
@@ -198,7 +197,7 @@ async function placeMarketBuyThenSell(symbol) {
         type: 'market',
         time_in_force: 'gtc',
       },
-      { headers }
+      { HEADERS }
     );
     console.log('Buy order response:', buyRes.data);
     buyOrder = buyRes.data;
@@ -207,7 +206,7 @@ async function placeMarketBuyThenSell(symbol) {
     await sleep(2000);
     try {
       const buyRes = await axios.post(
-        `${BASE_URL}/orders`,
+        `${ALPACA_BASE_URL}/orders`,
         {
           symbol,
           qty,
@@ -215,7 +214,7 @@ async function placeMarketBuyThenSell(symbol) {
           type: 'market',
           time_in_force: 'gtc',
         },
-        { headers }
+        { HEADERS }
       );
       console.log('Buy order retry response:', buyRes.data);
       buyOrder = buyRes.data;
@@ -229,8 +228,8 @@ async function placeMarketBuyThenSell(symbol) {
   let filled = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const chk = await axios.get(`${BASE_URL}/orders/${buyOrder.id}`, {
-        headers,
+      const chk = await axios.get(`${ALPACA_BASE_URL}/orders/${buyOrder.id}`, {
+        HEADERS,
       });
       filled = chk.data;
       if (filled.status === 'filled') break;
@@ -255,7 +254,7 @@ async function placeMarketBuyThenSell(symbol) {
 
   try {
     const sellRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${ALPACA_BASE_URL}/orders`,
       {
         symbol,
         qty: parseFloat(filled.filled_qty),
@@ -264,7 +263,7 @@ async function placeMarketBuyThenSell(symbol) {
         time_in_force: 'gtc',
         limit_price: parseFloat(limitPrice),
       },
-      { headers }
+      { HEADERS }
     );
     return { buy: filled, sell: sellRes.data };
   } catch (err) {
@@ -289,7 +288,7 @@ router.post('/buy', async (req, res) => {
   const { symbol, qty, side, type, time_in_force, limit_price } = req.body;
   const order = { symbol, qty, side, type, time_in_force, limit_price };
   try {
-    const response = await axios.post(`${BASE_URL}/orders`, order, { headers });
+    const response = await axios.post(`${ALPACA_BASE_URL}/orders`, order, { HEADERS });
     res.json(response.data);
   } catch (error) {
     console.error('Buy error:', error?.response?.data || error.message);
@@ -300,7 +299,7 @@ router.post('/buy', async (req, res) => {
   console.log('Attempting to place market buy for', symbol);
   try {
     const buyOrder = await axios.post(
-      `${BASE_URL}/orders`,
+      `${ALPACA_BASE_URL}/orders`,
       {
         symbol,
         qty,
@@ -308,7 +307,7 @@ router.post('/buy', async (req, res) => {
         type: 'market',
         time_in_force: 'gtc',
       },
-      { headers }
+      { HEADERS }
     );
 
     console.log('Buy order placed:', buyOrder.data.id);
@@ -318,7 +317,7 @@ router.post('/buy', async (req, res) => {
 
     console.log('Attempting to place market sell for', symbol);
     const sellOrder = await axios.post(
-      `${BASE_URL}/orders`,
+      `${ALPACA_BASE_URL}/orders`,
       {
         symbol,
         qty,
@@ -326,7 +325,7 @@ router.post('/buy', async (req, res) => {
         type: 'market',
         time_in_force: 'gtc',
       },
-      { headers }
+      { HEADERS }
     );
 
     console.log('Sell order placed:', sellOrder.data.id);
