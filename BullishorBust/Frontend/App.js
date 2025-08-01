@@ -52,14 +52,9 @@ import {
 // Alpaca and backend credentials loaded from Expo config
 const {
   EXPO_PUBLIC_BACKEND_URL: BACKEND_URL = 'http://localhost:3000/api',
-  ALPACA_API_KEY: ALPACA_KEY,
-  ALPACA_SECRET_KEY: ALPACA_SECRET,
-  ALPACA_BASE_URL,
 } = Constants.expoConfig?.extra || {};
 
 const HEADERS = {
-  'APCA-API-KEY-ID': ALPACA_KEY,
-  'APCA-API-SECRET-KEY': ALPACA_SECRET,
   'Content-Type': 'application/json',
 };
 
@@ -169,9 +164,9 @@ export default function App() {
   const [logHistory, setLogHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [portfolioValue, setPortfolioValue] = useState(0);
-  const [dailyChangePercent, setDailyChangePercent] = useState(0);
+  const [dailyChange, setDailyChange] = useState(0);
   const intervalRef = useRef(null);
-  console.log(`Alpaca credentials loaded for endpoint ${ALPACA_BASE_URL}`);
+  console.log(`Backend URL set to ${BACKEND_URL}`);
 
   // Subscribe to log events and keep only the most recent five entries
   useEffect(() => {
@@ -266,9 +261,7 @@ export default function App() {
   // nothing is held or if the request fails.
   const getPositionInfo = async (symbol) => {
     try {
-      const res = await fetch(`${ALPACA_BASE_URL}/positions/${symbol}`, {
-        headers: HEADERS,
-      });
+      const res = await fetch(`${BACKEND_URL}/positions/${symbol}`);
       if (!res.ok) return null;
       const info = await res.json();
       const qty = parseFloat(info.qty);
@@ -295,8 +288,7 @@ export default function App() {
   const getOpenOrders = async (symbol) => {
     try {
       const res = await fetch(
-        `${ALPACA_BASE_URL}/orders?status=open&symbols=${symbol}`,
-        { headers: HEADERS }
+        `${BACKEND_URL}/orders?status=open&symbols=${symbol}`
       );
       if (!res.ok) {
         const txt = await res.text();
@@ -323,7 +315,7 @@ export default function App() {
     };
     logTradeAction('forced_exit_attempt', symbol, { qty });
       try {
-        const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+        const res = await fetch(`${BACKEND_URL}/orders`, {
           method: 'POST',
           headers: HEADERS,
           body: JSON.stringify(order),
@@ -350,7 +342,7 @@ export default function App() {
     const pending = pendingLimitOrders[symbol];
     if (!pending) return;
     try {
-      const res = await fetch(`${ALPACA_BASE_URL}/orders/${pending.orderId}`, { headers: HEADERS });
+      const res = await fetch(`${BACKEND_URL}/orders/${pending.orderId}`);
       const data = await res.json();
       if (data.status === 'filled') {
         delete pendingLimitOrders[symbol];
@@ -391,7 +383,7 @@ export default function App() {
 
       if (signalValid) {
         // cancel existing limit
-        await fetch(`${ALPACA_BASE_URL}/orders/${pending.orderId}`, { method: 'DELETE', headers: HEADERS });
+        await fetch(`${BACKEND_URL}/orders/${pending.orderId}`, { method: 'DELETE' });
         const order = {
           symbol,
           notional: pending.notional,
@@ -419,7 +411,7 @@ export default function App() {
         }
       } else {
         // Signal no longer valid - just cancel the limit
-        await fetch(`${ALPACA_BASE_URL}/orders/${pending.orderId}`, { method: 'DELETE', headers: HEADERS });
+        await fetch(`${BACKEND_URL}/orders/${pending.orderId}`, { method: 'DELETE' });
         delete pendingLimitOrders[symbol];
         logTradeAction('buy_cancel_signal_lost', symbol, {});
       }
@@ -596,7 +588,7 @@ export default function App() {
 
         // Place stop-loss order after limit sell
         try {
-          const stopRes = await fetch(`${ALPACA_BASE_URL}/orders`, {
+          const stopRes = await fetch(`${BACKEND_URL}/orders`, {
             method: 'POST',
             headers: HEADERS,
             body: JSON.stringify(stopLoss),
@@ -685,9 +677,7 @@ export default function App() {
       }
 
       // Get Alpaca account info
-      const accountRes = await fetch(`${ALPACA_BASE_URL}/account`, {
-        headers: HEADERS,
-      });
+      const accountRes = await fetch(`${BACKEND_URL}/account`);
       if (!accountRes.ok) {
         const txt = await accountRes.text();
         throw new Error(`Account fetch failed ${accountRes.status}: ${txt}`);
@@ -858,7 +848,7 @@ export default function App() {
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
       try {
-        const res = await fetch(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
+        const res = await fetch(`${BACKEND_URL}/account`);
         if (!res.ok) {
           const txt = await res.text();
           throw new Error(`Account fetch failed ${res.status}: ${txt}`);
@@ -867,9 +857,9 @@ export default function App() {
         console.log('[ALPACA ACCOUNT]', account);
       const equity = parseFloat(account.equity ?? '0');
       const lastEquity = parseFloat(account.last_equity ?? '0');
-      const change = lastEquity ? ((equity - lastEquity) / lastEquity) * 100 : 0;
+      const change = equity - lastEquity;
       if (!isNaN(equity) && equity > 0) setPortfolioValue(equity);
-      if (!isNaN(change) && Math.abs(change) < 1000) setDailyChangePercent(change);
+      if (!isNaN(change)) setDailyChange(change);
     } catch (err) {
       console.error('[ALPACA ACCOUNT FAILED]', err);
     }
@@ -1075,13 +1065,13 @@ export default function App() {
   };
 
   const PortfolioSummary = () => {
-    const changeColor = dailyChangePercent >= 0 ? 'green' : 'red';
+    const changeColor = dailyChange >= 0 ? 'green' : 'red';
     const valueText = `$${portfolioValue.toFixed(2)}`;
-    const percentText = `${dailyChangePercent >= 0 ? '+' : ''}${dailyChangePercent.toFixed(2)}%`;
+    const changeText = `${dailyChange >= 0 ? '+' : ''}${dailyChange.toFixed(2)}`;
     return (
       <View style={styles.portfolioSummary}>
         <Text style={[styles.portfolioText, darkMode && styles.titleDark]}>Portfolio: {valueText}</Text>
-        <Text style={[styles.portfolioChange, { color: changeColor }]}>{percentText}</Text>
+        <Text style={[styles.portfolioChange, { color: changeColor }]}>{changeText}</Text>
       </View>
     );
   };
