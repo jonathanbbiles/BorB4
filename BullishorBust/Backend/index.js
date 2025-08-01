@@ -7,7 +7,7 @@ const { router: accountRouter } = require('./account');
 const app = express();
 app.use(express.json());
 
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use('/api', tradeRouter);
 app.use('/api', accountRouter);
 const {
@@ -38,6 +38,16 @@ app.get('/ping-alpaca', async (req, res) => {
     const msg = err.response?.data || err.message;
     console.error('Ping Alpaca failed:', msg);
     res.status(err.response?.status || 500).json({ error: msg });
+  }
+});
+
+// Expose API status endpoint for frontend validation
+app.get('/api/status', async (req, res) => {
+  try {
+    const account = await axios.get(`${BASE_URL}/v2/account`, { headers });
+    res.json({ account: account.data });
+  } catch (err) {
+    res.status(500).json({ error: 'Alpaca credentials invalid' });
   }
 });
 

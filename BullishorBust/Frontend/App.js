@@ -35,6 +35,7 @@ import {
 */
 
 import Constants from 'expo-constants';
+import { BACKEND_BASE_URL } from './constants';
 
 // API credentials are provided via Expo config extras.
 const {
@@ -56,7 +57,7 @@ const getAlpacaHeaders = () => ({
 // When running on a real device "localhost" will not resolve to your
 // development machine. Use an Expo or ngrok tunnel URL instead.
 // Backend server for trade requests
-const BACKEND_URL = 'https://borb4.onrender.com';
+const BACKEND_URL = BACKEND_BASE_URL;
 
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
@@ -277,6 +278,7 @@ export default function App() {
       };
     } catch (err) {
       console.error('getPositionInfo error:', err);
+      Alert.alert('Network Error', 'Could not reach backend.');
       return null;
     }
   };
@@ -299,6 +301,7 @@ export default function App() {
       return Array.isArray(data) ? data : [];
     } catch (err) {
       console.error('getOpenOrders error:', err);
+      Alert.alert('Network Error', 'Could not reach backend.');
       return [];
     }
   };
@@ -334,6 +337,7 @@ export default function App() {
       }
     } catch (err) {
       logTradeAction('forced_exit_error', symbol, { error: err.message });
+      Alert.alert('Network Error', 'Could not reach backend.');
     }
   };
 
@@ -350,6 +354,7 @@ export default function App() {
       }
     } catch (err) {
       // if check fails just exit
+      Alert.alert('Network Error', 'Could not reach backend.');
       return;
     }
 
@@ -368,6 +373,7 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Signal validation error:', err);
+      Alert.alert('Network Error', 'Could not reach backend.');
     }
   };
 
