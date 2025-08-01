@@ -1,4 +1,5 @@
-require('dotenv').config();
+// Load environment variables from the Backend/.env file
+require('dotenv').config({ path: __dirname + '/.env' });
 const axios = require('axios');
 const express = require('express');
 const router = express.Router();
