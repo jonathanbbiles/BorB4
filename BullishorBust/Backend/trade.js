@@ -1,10 +1,14 @@
 require('dotenv').config();
+const express = require('express');
 const axios = require('axios');
+const router = express.Router();
 
-const API_KEY = BullishorBust.Backend.env.ALPACA_API_KEY;
-const SECRET_KEY = BullishorBust.Backend.env.ALPACA_SECRET_KEY;
-const BASE_URL = BullishorBust.Backend.env.ALPACA_BASE_URL;
-const DATA_URL = BullishorBust.Backend.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v1beta2';
+const {
+  ALPACA_API_KEY: API_KEY,
+  ALPACA_SECRET_KEY: SECRET_KEY,
+  ALPACA_BASE_URL: BASE_URL,
+  ALPACA_DATA_URL: DATA_URL = 'https://data.alpaca.markets/v1beta2',
+} = process.env;
 
 const headers = {
   'APCA-API-KEY-ID': API_KEY,
@@ -256,7 +260,32 @@ async function placeMarketBuyThenSell(symbol) {
   }
 }
 
+// Express routes
+router.post('/trade', async (req, res) => {
+  const { symbol } = req.body;
+  try {
+    const result = await placeMarketBuyThenSell(symbol);
+    res.json(result);
+  } catch (err) {
+    console.error('Trade error:', err?.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/buy', async (req, res) => {
+  const { symbol, qty, side, type, time_in_force, limit_price } = req.body;
+  const order = { symbol, qty, side, type, time_in_force, limit_price };
+  try {
+    const response = await axios.post(`${BASE_URL}/orders`, order, { headers });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Buy error:', error?.response?.data || error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = {
+  router,
   placeLimitBuyThenSell,
   placeMarketBuyThenSell,
 };

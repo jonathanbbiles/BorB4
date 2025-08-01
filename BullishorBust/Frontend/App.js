@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -48,10 +49,13 @@ import {
 
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
-// Alpaca credentials are loaded from environment variables
-const ALPACA_KEY = BullishorBust.Frontend.env.ALPACA_API_KEY;
-const ALPACA_SECRET = BullishorBust.Frontend.env.ALPACA_SECRET_KEY;
-const ALPACA_BASE_URL = BullishorBust.Frontend.env.ALPACA_BASE_URL;
+// Alpaca and backend credentials loaded from Expo config
+const {
+  EXPO_PUBLIC_BACKEND_URL: BACKEND_URL = 'http://localhost:3000/api',
+  ALPACA_API_KEY: ALPACA_KEY,
+  ALPACA_SECRET_KEY: ALPACA_SECRET,
+  ALPACA_BASE_URL,
+} = Constants.expoConfig?.extra || {};
 
 const HEADERS = {
   'APCA-API-KEY-ID': ALPACA_KEY,
@@ -318,12 +322,12 @@ export default function App() {
       time_in_force: CRYPTO_TIME_IN_FORCE,
     };
     logTradeAction('forced_exit_attempt', symbol, { qty });
-    try {
-      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
-        method: 'POST',
-        headers: HEADERS,
-        body: JSON.stringify(order),
-      });
+      try {
+        const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+          method: 'POST',
+          headers: HEADERS,
+          body: JSON.stringify(order),
+        });
       const raw = await res.text();
       let data;
       try { data = JSON.parse(raw); } catch { data = { raw }; }
@@ -395,9 +399,9 @@ export default function App() {
           type: 'market',
           time_in_force: CRYPTO_TIME_IN_FORCE,
         };
-        const res2 = await fetch(`${ALPACA_BASE_URL}/orders`, {
+        const res2 = await fetch(`${BACKEND_URL}/buy`, {
           method: 'POST',
-          headers: HEADERS,
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(order),
         });
         const raw = await res2.text();
@@ -571,7 +575,7 @@ export default function App() {
     showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty.toFixed(6)}`);
 
     try {
-      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+      const res = await fetch(`/buy`, {
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify(limitSell),
@@ -799,9 +803,9 @@ export default function App() {
         limit_price,
       };
 
-      const res = await fetch(`${ALPACA_BASE_URL}/orders`, {
+      const res = await fetch(`${BACKEND_URL}/buy`, {
         method: 'POST',
-        headers: HEADERS,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(order),
       });
 
