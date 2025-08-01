@@ -1,10 +1,10 @@
 require('dotenv').config();
 const axios = require('axios');
 
-const API_KEY = process.BullishorBust.Backend.env.ALPACA_API_KEY;
-const SECRET_KEY = process.BullishorBust.Backend.env.ALPACA_SECRET_KEY;
-const BASE_URL = process.BullishorBust.Backend.env.ALPACA_BASE_URL;
-const DATA_URL = process.BullishorBust.Backend.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v1beta2';
+const API_KEY = BullishorBust.Backend.env.ALPACA_API_KEY;
+const SECRET_KEY = BullishorBust.Backend.env.ALPACA_SECRET_KEY;
+const BASE_URL = BullishorBust.Backend.env.ALPACA_BASE_URL;
+const DATA_URL = BullishorBust.Backend.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v1beta2';
 
 const headers = {
   'APCA-API-KEY-ID': API_KEY,
