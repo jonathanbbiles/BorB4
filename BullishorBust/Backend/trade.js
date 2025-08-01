@@ -107,7 +107,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
 async function getLatestPrice(symbol) {
   try {
     const res = await axios.get(
-      `${DATA_URL}/crypto/latest/trades?symbols=${symbol}`,
+      `${BASE_URL}/crypto/latest/trades?symbols=${symbol}`,
       { headers }
     );
     const trade = res.data.trades && res.data.trades[symbol];
