@@ -575,7 +575,7 @@ export default function App() {
     showNotification(`📤 Sell: ${symbol} @ $${limit_price} x${qty.toFixed(6)}`);
 
     try {
-      const res = await fetch(`/buy`, {
+      const res = await fetch(`${BACKEND_URL}/sell`, {
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify(limitSell),
@@ -694,6 +694,8 @@ export default function App() {
       }
       const accountData = await accountRes.json();
 
+      console.log('[BUY] accountData', accountData);
+
       // Use non_marginable_buying_power when available.  Crypto
       // purchases can only be funded from settled cash, which is
       // reflected in non_marginable_buying_power【247783379990709†L355-L359】.
@@ -702,6 +704,8 @@ export default function App() {
         accountData.non_marginable_buying_power ??
         accountData.buying_power ??
         accountData.cash;
+
+      console.log('[BUY] cashRaw:', cashRaw);
       const cash = parseFloat(cashRaw || 0);
       const portfolioValue = parseFloat(
         accountData.equity ?? accountData.portfolio_value ?? '0'
@@ -803,6 +807,8 @@ export default function App() {
         limit_price,
       };
 
+      console.log('[BUY] Final order payload', order);
+
       const res = await fetch(`${BACKEND_URL}/buy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -858,11 +864,12 @@ export default function App() {
           throw new Error(`Account fetch failed ${res.status}: ${txt}`);
         }
         const account = await res.json();
+        console.log('[ALPACA ACCOUNT]', account);
       const equity = parseFloat(account.equity ?? '0');
       const lastEquity = parseFloat(account.last_equity ?? '0');
       const change = lastEquity ? ((equity - lastEquity) / lastEquity) * 100 : 0;
-      if (!isNaN(equity)) setPortfolioValue(equity);
-      if (!isNaN(change)) setDailyChangePercent(change);
+      if (!isNaN(equity) && equity > 0) setPortfolioValue(equity);
+      if (!isNaN(change) && Math.abs(change) < 1000) setDailyChangePercent(change);
     } catch (err) {
       console.error('[ALPACA ACCOUNT FAILED]', err);
     }
