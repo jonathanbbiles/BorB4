@@ -1,4 +1,4 @@
-const BASE_URL = process.bullishorbust.backend.env.BACKEND_URL || 'http://localhost:3000';
+const BASE_URL = process.backend.env.BACKEND_URL || 'http://localhost:3000';
 (async () => {
   try {
     const ping = await fetch(`${BASE_URL}/ping`);
