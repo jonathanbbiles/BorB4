@@ -363,6 +363,9 @@ export default function App() {
       }
       const priceData = await pRes.json();
       const histoData = await hRes.json();
+      if (!priceData?.USD || !histoData?.Data) {
+        throw new Error('Malformed response from CryptoCompare');
+      }
     } catch (err) {
       console.warn('Signal validation error:', err);
     }
