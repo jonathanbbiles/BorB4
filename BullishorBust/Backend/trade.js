@@ -284,6 +284,51 @@ router.post('/buy', async (req, res) => {
   }
 });
 
+// Simple market buy followed by market sell
+async function placeMarketBuyThenSell(symbol) {
+  const qty = 1; // hardcoded quantity; adjust if needed
+
+  console.log('Attempting to place market buy for', symbol);
+  try {
+    const buyOrder = await axios.post(
+      `${BASE_URL}/v2/orders`,
+      {
+        symbol,
+        qty,
+        side: 'buy',
+        type: 'market',
+        time_in_force: 'gtc',
+      },
+      { headers }
+    );
+
+    console.log('Buy order placed:', buyOrder.data.id);
+
+    // Wait for fill (simplified, production should use websockets or polling)
+    await sleep(5000);
+
+    console.log('Attempting to place market sell for', symbol);
+    const sellOrder = await axios.post(
+      `${BASE_URL}/v2/orders`,
+      {
+        symbol,
+        qty,
+        side: 'sell',
+        type: 'market',
+        time_in_force: 'gtc',
+      },
+      { headers }
+    );
+
+    console.log('Sell order placed:', sellOrder.data.id);
+
+    return { buyOrder: buyOrder.data, sellOrder: sellOrder.data };
+  } catch (err) {
+    console.error('Trade execution failed:', err?.response?.data || err.message);
+    throw new Error('Trade failed: ' + (err.response?.data?.message || err.message));
+  }
+}
+
 module.exports = {
   router,
   placeLimitBuyThenSell,
