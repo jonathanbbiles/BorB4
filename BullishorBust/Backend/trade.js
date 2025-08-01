@@ -1,17 +1,19 @@
+require('dotenv').config();
 const axios = require('axios');
 
-const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
-const DATA_URL = 'https://data.alpaca.markets/v1beta2';
-const API_KEY = 'PKN4ICO3WECXSLDGXCHC';
-const SECRET_KEY = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
+const {
+  ALPACA_API_KEY: API_KEY,
+  ALPACA_SECRET_KEY: SECRET_KEY,
+  ALPACA_BASE_URL: BASE_URL,
+  ALPACA_DATA_URL: DATA_URL,
+} = process.env;
 
 const HEADERS = {
   'APCA-API-KEY-ID': API_KEY,
   'APCA-API-SECRET-KEY': SECRET_KEY,
+  'Content-Type': 'application/json',
 };
 
-
-//require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 
@@ -50,7 +52,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty,
@@ -73,7 +75,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let filledOrder = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const check = await axios.get(`${ALPACA_BASE_URL}/orders/${buyOrder.id}`, {
+      const check = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
         HEADERS,
       });
       filledOrder = check.;
@@ -96,7 +98,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let sellRes;
   try {
     sellRes = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty: parseFloat(filledOrder.filled_qty),
@@ -119,7 +121,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
 async function getLatestPrice(symbol) {
   try {
     const res = await axios.get(
-      `${ALPACA_BASE_URL}/crypto/latest/trades?symbols=${symbol}`,
+      `${DATA_URL}/crypto/latest/trades?symbols=${symbol}`,
       { HEADERS }
     );
     const trade = res..trades && res..trades[symbol];
@@ -134,7 +136,7 @@ async function getLatestPrice(symbol) {
 // Get portfolio value and buying power from the Alpaca account
 async function getAccountInfo() {
   try {
-    const res = await axios.get(`${ALPACA_BASE_URL}/account`, { HEADERS });
+    const res = await axios.get(`${BASE_URL}/v2/account`, { HEADERS });
     const portfolioValue = parseFloat(res.data.portfolio_value);
     const buyingPower = parseFloat(res.data.buying_power);
     const cash = parseFloat(res.data.cash);
@@ -189,7 +191,7 @@ async function placeMarketBuyThenSell(symbol) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty,
@@ -206,7 +208,7 @@ async function placeMarketBuyThenSell(symbol) {
     await sleep(2000);
     try {
       const buyRes = await axios.post(
-        `${ALPACA_BASE_URL}/orders`,
+        `${BASE_URL}/v2/orders`,
         {
           symbol,
           qty,
@@ -228,7 +230,7 @@ async function placeMarketBuyThenSell(symbol) {
   let filled = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const chk = await axios.get(`${ALPACA_BASE_URL}/orders/${buyOrder.id}`, {
+      const chk = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
         HEADERS,
       });
       filled = chk.data;
@@ -254,7 +256,7 @@ async function placeMarketBuyThenSell(symbol) {
 
   try {
     const sellRes = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty: parseFloat(filled.filled_qty),
@@ -288,7 +290,7 @@ router.post('/buy', async (req, res) => {
   const { symbol, qty, side, type, time_in_force, limit_price } = req.body;
   const order = { symbol, qty, side, type, time_in_force, limit_price };
   try {
-    const response = await axios.post(`${ALPACA_BASE_URL}/orders`, order, { HEADERS });
+    const response = await axios.post(`${BASE_URL}/v2/orders`, order, { HEADERS });
     res.json(response.data);
   } catch (error) {
     console.error('Buy error:', error?.response?.data || error.message);
@@ -299,7 +301,7 @@ router.post('/buy', async (req, res) => {
   console.log('Attempting to place market buy for', symbol);
   try {
     const buyOrder = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty,
@@ -317,7 +319,7 @@ router.post('/buy', async (req, res) => {
 
     console.log('Attempting to place market sell for', symbol);
     const sellOrder = await axios.post(
-      `${ALPACA_BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty,

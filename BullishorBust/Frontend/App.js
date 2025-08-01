@@ -34,15 +34,20 @@ import {
 *    for production use.
 */
 
-// API credentials are expected to be provided via environment variables.
-// If they are missing the app will still run but trading requests will fail.
-// Alpaca base URL remains the paper trading endpoint.
-const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
+import Constants from 'expo-constants';
 
-// Helper to build Alpaca auth headers from Expo environment variables
+// API credentials are provided via Expo config extras.
+const {
+  ALPACA_API_KEY,
+  ALPACA_SECRET_KEY,
+  ALPACA_BASE_URL,
+  ALPACA_DATA_URL,
+} = Constants.expoConfig.extra || {};
+
+// Helper to build Alpaca auth headers from Expo config
 const getAlpacaHeaders = () => ({
-  'APCA-API-KEY-ID': process.env.EXPO_PUBLIC_ALPACA_KEY,
-  'APCA-API-SECRET-KEY': process.env.EXPO_PUBLIC_ALPACA_SECRET,
+  'APCA-API-KEY-ID': ALPACA_API_KEY,
+  'APCA-API-SECRET-KEY': ALPACA_SECRET_KEY,
   'Content-Type': 'application/json',
 });
 

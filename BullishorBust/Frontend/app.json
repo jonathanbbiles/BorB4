@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "bullish-or-bust",
+    "version": "1.0.0",
+    "extra": {
+      "ALPACA_API_KEY": "AKP4CYCLABN0QHC7GVH4",
+      "ALPACA_SECRET_KEY": "PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca",
+      "ALPACA_BASE_URL": "https://api.alpaca.markets",
+      "ALPACA_DATA_URL": "https://data.alpaca.markets/v1beta2"
+    }
+  }
+}

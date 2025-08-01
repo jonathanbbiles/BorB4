@@ -32,11 +32,12 @@ app.get('/ping', (req, res) => {
 // Verify Alpaca API connectivity and credentials
 app.get('/ping-alpaca', async (req, res) => {
   try {
-    await axios.get(`${BASE_URL}/account`, { headers });
-    res.json({ status: 'ok' });
+    const { data } = await axios.get(`${BASE_URL}/v2/account`, { headers });
+    res.json({ account_id: data.id, status: data.status });
   } catch (err) {
-    console.error('Ping Alpaca failed:', err?.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data || err.message });
+    const msg = err.response?.data || err.message;
+    console.error('Ping Alpaca failed:', msg);
+    res.status(err.response?.status || 500).json({ error: msg });
   }
 });
 
