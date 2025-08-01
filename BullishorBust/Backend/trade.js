@@ -38,7 +38,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty,
@@ -61,7 +61,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let filledOrder = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const check = await axios.get(`${BASE_URL}/orders/${buyOrder.id}`, {
+      const check = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
         headers,
       });
       filledOrder = check.data;
@@ -84,7 +84,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
   let sellRes;
   try {
     sellRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty: parseFloat(filledOrder.filled_qty),
@@ -177,7 +177,7 @@ async function placeMarketBuyThenSell(symbol) {
   let buyOrder;
   try {
     const buyRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty,
@@ -194,7 +194,7 @@ async function placeMarketBuyThenSell(symbol) {
     await sleep(2000);
     try {
       const buyRes = await axios.post(
-        `${BASE_URL}/orders`,
+        `${BASE_URL}/v2/orders`,
         {
           symbol,
           qty,
@@ -216,7 +216,7 @@ async function placeMarketBuyThenSell(symbol) {
   let filled = buyOrder;
   for (let i = 0; i < 20; i++) {
     try {
-      const chk = await axios.get(`${BASE_URL}/orders/${buyOrder.id}`, {
+      const chk = await axios.get(`${BASE_URL}/v2/orders/${buyOrder.id}`, {
         headers,
       });
       filled = chk.data;
@@ -242,7 +242,7 @@ async function placeMarketBuyThenSell(symbol) {
 
   try {
     const sellRes = await axios.post(
-      `${BASE_URL}/orders`,
+      `${BASE_URL}/v2/orders`,
       {
         symbol,
         qty: parseFloat(filled.filled_qty),
@@ -276,17 +276,13 @@ router.post('/buy', async (req, res) => {
   const { symbol, qty, side, type, time_in_force, limit_price } = req.body;
   const order = { symbol, qty, side, type, time_in_force, limit_price };
   try {
-    const response = await axios.post(`${BASE_URL}/orders`, order, { headers });
+    const response = await axios.post(`${BASE_URL}/v2/orders`, order, { headers });
     res.json(response.data);
   } catch (error) {
     console.error('Buy error:', error?.response?.data || error.message);
     res.status(500).json({ error: error.message });
   }
 });
-
-// Simple market buy followed by market sell
-async function placeMarketBuyThenSell(symbol) {
-  const qty = 1; // hardcoded quantity; adjust if needed
 
   console.log('Attempting to place market buy for', symbol);
   try {
