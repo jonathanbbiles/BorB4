@@ -13,6 +13,10 @@ const headers = {
 };
 console.log(`Alpaca credentials loaded for endpoint ${BASE_URL}`);
 
+if (!API_KEY || !SECRET_KEY || !BASE_URL) {
+  throw new Error('Missing Alpaca API credentials. Check your .env file.');
+}
+
 const MIN_ORDER_NOTIONAL = 1; // Alpaca minimum order amount
 
 // Offsets taker fees when calculating profit target
@@ -37,7 +41,7 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
         side: 'buy',
         type: 'limit',
         time_in_force: 'gtc', // crypto orders must be GTC
-        limit_price: limitPrice,
+        limit_price: parseFloat(limitPrice),
       },
       { headers }
     );
@@ -79,11 +83,11 @@ async function placeLimitBuyThenSell(symbol, qty, limitPrice) {
       `${BASE_URL}/orders`,
       {
         symbol,
-        qty: filledOrder.filled_qty,
+        qty: parseFloat(filledOrder.filled_qty),
         side: 'sell',
         type: 'limit',
         time_in_force: 'gtc', // match the buy order's time in force
-        limit_price: sellPrice,
+        limit_price: parseFloat(sellPrice),
       },
       { headers }
     );
@@ -135,9 +139,9 @@ function roundQty(qty) {
   return Math.floor(qty * factor) / factor;
 }
 
-// Round prices to two decimals
+// Round prices to six decimals
 function roundPrice(price) {
-  return parseFloat(Number(price).toFixed(2));
+  return parseFloat(Number(price).toFixed(6));
 }
 
 // Market buy using 10% of portfolio value then place a limit sell with markup
@@ -183,7 +187,25 @@ async function placeMarketBuyThenSell(symbol) {
     buyOrder = buyRes.data;
   } catch (err) {
     console.error('Buy order failed:', err?.response?.data || err.message);
-    throw err;
+    await sleep(2000);
+    try {
+      const buyRes = await axios.post(
+        `${BASE_URL}/orders`,
+        {
+          symbol,
+          qty,
+          side: 'buy',
+          type: 'market',
+          time_in_force: 'gtc',
+        },
+        { headers }
+      );
+      console.log('Buy order retry response:', buyRes.data);
+      buyOrder = buyRes.data;
+    } catch (retryErr) {
+      console.error('Buy order retry failed:', retryErr?.response?.data || retryErr.message);
+      throw retryErr;
+    }
   }
 
   // Wait for fill
@@ -219,11 +241,11 @@ async function placeMarketBuyThenSell(symbol) {
       `${BASE_URL}/orders`,
       {
         symbol,
-        qty: filled.filled_qty,
+        qty: parseFloat(filled.filled_qty),
         side: 'sell',
         type: 'limit',
         time_in_force: 'gtc',
-        limit_price: limitPrice,
+        limit_price: parseFloat(limitPrice),
       },
       { headers }
     );
