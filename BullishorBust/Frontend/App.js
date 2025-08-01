@@ -672,7 +672,7 @@ export default function App() {
       }
 
       // Get Alpaca account info
-      const accountRes = await fetch(`${BACKEND_URL}/account`);
+      const accountRes = await fetch(`${BACKEND_URL}/api/account`);
       if (!accountRes.ok) {
         const txt = await accountRes.text();
         throw new Error(`Account fetch failed ${accountRes.status}: ${txt}`);
@@ -843,7 +843,7 @@ export default function App() {
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
       try {
-        const res = await fetch(`${BACKEND_URL}/account`);
+        const res = await fetch(`${BACKEND_URL}/api/account`);
         if (!res.ok) {
           const txt = await res.text();
           throw new Error(`Account fetch failed ${res.status}: ${txt}`);
