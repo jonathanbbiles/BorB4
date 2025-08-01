@@ -1,7 +1,7 @@
 services:
   - type: web
     name: bullish-backend
-    rootDir: BullishorBust/Backend
+    rootDir: BullishorBust/Bullishorbust/Backend/
     env: node
     plan: free
     buildCommand: npm install
