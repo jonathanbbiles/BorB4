@@ -2,15 +2,18 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { placeMarketBuyThenSell } = require('./trade');
+const { router: tradeRouter } = require('./trade');
 const app = express();
 app.use(express.json());
 
 app.use(cors());
-const API_KEY = BullishorBust.Backend.env.ALPACA_API_KEY;
-const SECRET_KEY = BullishorBust.Backend.env.ALPACA_SECRET_KEY;
-const BASE_URL = BullishorBust.Backend.env.ALPACA_BASE_URL;
-const DATA_URL = BullishorBust.Backend.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v1beta2';
+app.use('/api', tradeRouter);
+const {
+  ALPACA_API_KEY: API_KEY,
+  ALPACA_SECRET_KEY: SECRET_KEY,
+  ALPACA_BASE_URL: BASE_URL,
+  ALPACA_DATA_URL: DATA_URL = 'https://data.alpaca.markets/v1beta2',
+} = process.env;
 
 const headers = {
   'APCA-API-KEY-ID': API_KEY,
@@ -35,35 +38,6 @@ app.get('/ping-alpaca', async (req, res) => {
   }
 });
 
-// Sequentially place a limit buy order followed by a limit sell once filled
-app.post('/trade', async (req, res) => {
-  const { symbol } = req.body;
-  try {
-    const result = await placeMarketBuyThenSell(symbol);
-    res.json(result);
-  } catch (err) {
-    console.error('Trade error:', err?.response?.data || err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/buy', async (req, res) => {
-  const { symbol, qty, side, type, time_in_force, limit_price } = req.body;
-  console.log('Received manual buy for:', symbol);
-  const order = { symbol, qty, side, type, time_in_force, limit_price };
-  console.log('Order payload:', order);
-
-  try {
-    const response = await axios.post(`${BASE_URL}/orders`, order, {
-      headers,
-    });
-    console.log('Alpaca response:', response.data);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Buy error:', error?.response?.data || error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
