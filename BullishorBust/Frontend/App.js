@@ -49,9 +49,9 @@ import {
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
 // Alpaca credentials are loaded from environment variables
-const ALPACA_KEY = process.BullishorBust.Frontend.env.ALPACA_API_KEY;
-const ALPACA_SECRET = process.BullishorBust.Frontend.env.ALPACA_SECRET_KEY;
-const ALPACA_BASE_URL = process.BullishorBust.Frontend.env.ALPACA_BASE_URL;
+const ALPACA_KEY = BullishorBust.Frontend.env.ALPACA_API_KEY;
+const ALPACA_SECRET = BullishorBust.Frontend.env.ALPACA_SECRET_KEY;
+const ALPACA_BASE_URL = BullishorBust.Frontend.env.ALPACA_BASE_URL;
 
 const HEADERS = {
   'APCA-API-KEY-ID': ALPACA_KEY,
