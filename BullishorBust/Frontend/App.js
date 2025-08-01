@@ -362,6 +362,9 @@ export default function App() {
       const priceUrl = `https://min-api.cryptocompare.com/data/price?fsym=${ccSymbol}&tsyms=USD`;
       const histoUrl = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${ccSymbol}&tsym=USD&limit=52&aggregate=15`;
       const [pRes, hRes] = await Promise.all([fetch(priceUrl), fetch(histoUrl)]);
+      if (!pRes.ok || !hRes.ok) {
+        throw new Error(`CryptoCompare refresh failed ${pRes.status}/${hRes.status}`);
+      }
       const priceData = await pRes.json();
       const histoData = await hRes.json();
       const price = priceData?.USD;
@@ -504,12 +507,15 @@ export default function App() {
 
     // Fetch latest price each time to evaluate sell conditions
     let livePrice = null;
-    try {
-      const cc = symbol.replace('USD', '');
-      const priceRes = await fetch(
-        `https://min-api.cryptocompare.com/data/price?fsym=${cc}&tsyms=USD`
-      );
-      const priceData = await priceRes.json();
+      try {
+        const cc = symbol.replace('USD', '');
+        const priceRes = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${cc}&tsyms=USD`
+        );
+        if (!priceRes.ok) {
+          throw new Error(`Price fetch failed ${priceRes.status}`);
+        }
+        const priceData = await priceRes.json();
       if (typeof priceData?.USD === 'number') {
         livePrice = priceData.USD;
       }
@@ -664,6 +670,9 @@ export default function App() {
       const priceRes = await fetch(
         `https://min-api.cryptocompare.com/data/price?fsym=${ccSymbol}&tsyms=USD`
       );
+      if (!priceRes.ok) {
+        throw new Error(`Price fetch failed ${priceRes.status}`);
+      }
       const priceData = await priceRes.json();
       const price = priceData?.USD;
 
@@ -675,6 +684,10 @@ export default function App() {
       const accountRes = await fetch(`${ALPACA_BASE_URL}/account`, {
         headers: HEADERS,
       });
+      if (!accountRes.ok) {
+        const txt = await accountRes.text();
+        throw new Error(`Account fetch failed ${accountRes.status}: ${txt}`);
+      }
       const accountData = await accountRes.json();
 
       // Use non_marginable_buying_power when available.  Crypto
@@ -834,9 +847,13 @@ export default function App() {
     // Log whenever a refresh cycle begins
     logTradeAction('refresh', 'all');
     perSymbolFundsLock = {}; // Reset funds lock each cycle
-    try {
-      const res = await fetch(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
-      const account = await res.json();
+      try {
+        const res = await fetch(`${ALPACA_BASE_URL}/account`, { headers: HEADERS });
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(`Account fetch failed ${res.status}: ${txt}`);
+        }
+        const account = await res.json();
       const equity = parseFloat(account.equity ?? '0');
       const lastEquity = parseFloat(account.last_equity ?? '0');
       const change = lastEquity ? ((equity - lastEquity) / lastEquity) * 100 : 0;
@@ -872,6 +889,9 @@ export default function App() {
         const histoUrl = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${asset.cc}&tsym=USD&limit=52&aggregate=15`;
 
         const [priceRes, histoRes] = await Promise.all([fetch(priceUrl), fetch(histoUrl)]);
+        if (!priceRes.ok || !histoRes.ok) {
+          throw new Error(`CryptoCompare data failed ${priceRes.status}/${histoRes.status}`);
+        }
         const priceData = await priceRes.json();
         const histoData = await histoRes.json();
 
