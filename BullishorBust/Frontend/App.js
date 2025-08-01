@@ -362,4 +362,15 @@ export default function App() {
         throw new Error(`CryptoCompare refresh failed ${pRes.status}/${hRes.status}`);
       }
       const priceData = await pRes.json();
-      const histoData
+      const histoData = await hRes.json();
+    } catch (err) {
+      console.warn('Signal validation error:', err);
+    }
+  };
+
+  return (
+    <View>
+      <Text>BorB4 App</Text>
+    </View>
+  );
+}
