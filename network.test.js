@@ -1,4 +1,4 @@
-const BASE_URL = process.backend.env.ALPACA_BASE_URL || 'http://localhost:3000';
+const BASE_URL = backend.env.ALPACA_BASE_URL || 'http://localhost:3000';
 (async () => {
   try {
     const ping = await fetch(`${BASE_URL}/ping`);
