@@ -3,11 +3,13 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const { router: tradeRouter } = require('./trade');
+const { router: accountRouter } = require('./account');
 const app = express();
 app.use(express.json());
 
 app.use(cors());
 app.use('/api', tradeRouter);
+app.use('/api', accountRouter);
 const {
   ALPACA_API_KEY: API_KEY,
   ALPACA_SECRET_KEY: SECRET_KEY,
