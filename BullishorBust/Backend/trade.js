@@ -1,5 +1,7 @@
 require('dotenv').config();
 const axios = require('axios');
+const express = require('express');
+const router = express.Router();
 
 const {
   ALPACA_API_KEY: API_KEY,
@@ -14,26 +16,6 @@ const HEADERS = {
   'Content-Type': 'application/json',
 };
 
-const express = require('express');
-const router = express.Router();
-
-//const {
-//  ALPACA_API_KEY: API_KEY,
-//  ALPACA_SECRET_KEY: SECRET_KEY,
-//  ALPACA_BASE_URL: BASE_URL,
-//  ALPACA_DATA_URL: DATA_URL,
-//} = process.env;
-
-//const HEADERS = {
-//  'APCA-API-KEY-ID': API_KEY,
-//  'APCA-API-SECRET-KEY': SECRET_KEY,
-//  'Content-Type': 'application/json',
-//};
-//console.log(`Alpaca credentials loaded for endpoint ${BASE_URL}`);
-
-//if (!API_KEY || !SECRET_KEY || !BASE_URL) {
-//  throw new Error('Missing Alpaca API credentials. Check your .env file.');
-//}
 
 const MIN_ORDER_NOTIONAL = 1; // Alpaca minimum order amount
 
