@@ -9,6 +9,7 @@
     "axios": "^1.6.8",
     "expo": "~50.0.0",
     "expo-constants": "^14.0.0",
+    "dotenv": "^16.4.5",
     "react": "18.2.0",
     "react-native": "0.72.3",
     "react-native-root-toast": "^3.4.0"
