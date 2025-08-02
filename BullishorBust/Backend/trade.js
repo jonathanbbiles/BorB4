@@ -285,4 +285,5 @@ module.exports = {
   router,
   placeLimitBuyThenSell,
   placeMarketBuyThenSell,
+  getAccountInfo,
 };
