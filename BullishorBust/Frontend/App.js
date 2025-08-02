@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Constants from 'expo-constants';
+//import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -37,7 +37,7 @@ import {
 
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
-// Alpaca base URL remains the paper trading endpoint.
+// Alpaca base URL remains the paper trading .
 //const {
 //  EXPO_PUBLIC_ALPACA_KEY,
 //  EXPO_PUBLIC_ALPACA_SECRET,
@@ -47,12 +47,12 @@ import {
 
 //added code by me to try to fix alpaca crap
 
-const ALPACA_KEY = 'PKN4ICO3WECXSLDGXCHC';
+const ALPACA_KEY = 'AKP4CYCLABN0QHC7GVH4';
 const ALPACA_SECRET = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
-const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
+const ALPACA_BASE_URL = 'https://api.alpaca.markets';
 
 //const ALPACA_BASE_URL = EXPO_PUBLIC_ALPACA_BASE_URL ||
-//  'https://paper-api.alpaca.markets/v2';
+//  'https://api.alpaca.markets';
 
 // Helper to build Alpaca auth headers from Expo environment variables
 const getAlpacaHeaders = () => ({
@@ -102,7 +102,7 @@ export const registerLogSubscriber = (fn) => {
 
 // Simple logger to trace trade attempts.
 // It timestamps each event and prints to the console.
-// Optionally send logs to your own endpoint or save to device storage.
+// Optionally send logs to your own  or save to device storage.
 // Adapt `sendToServer` as needed, or remove it if you don't have a server.
 const logTradeAction = async (type, symbol, details = {}) => {
   const timestamp = new Date().toISOString();
@@ -119,7 +119,7 @@ const logTradeAction = async (type, symbol, details = {}) => {
   }
   // Example: Send log to your server (optional)
   // try {
-  //   await fetch('https://yourloggingendpoint.example.com/log', {
+  //   await fetch('https://yourlogging.example.com/log', {
   //     method: 'POST',
   //     headers: { 'Content-Type': 'application/json' },
   //     body: JSON.stringify(entry),
