@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-//import Constants from 'expo-constants';
+import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -10,6 +10,18 @@ import {
   Switch,
   Alert,
 } from 'react-native';
+
+const {
+  EXPO_PUBLIC_BACKEND_URL,
+  EXPO_PUBLIC_ALPACA_KEY,
+  EXPO_PUBLIC_ALPACA_SECRET,
+  EXPO_PUBLIC_ALPACA_BASE_URL
+} = Constants.expoConfig.extra;
+
+const BACKEND_URL = EXPO_PUBLIC_BACKEND_URL;
+const ALPACA_KEY = EXPO_PUBLIC_ALPACA_KEY;
+const ALPACA_SECRET = EXPO_PUBLIC_ALPACA_SECRET;
+const ALPACA_BASE_URL = EXPO_PUBLIC_ALPACA_BASE_URL;
 
 /*
 * This component implements a simple crypto trading dashboard for Alpaca.  It
@@ -35,29 +47,10 @@ import {
 *    for production use.
 */
 
-// API credentials are expected to be provided via environment variables.
-// If they are missing the app will still run but trading requests will fail.
-// Alpaca base URL remains the paper trading .
-//const {
-//  EXPO_PUBLIC_ALPACA_KEY,
-//  EXPO_PUBLIC_ALPACA_SECRET,
-//  EXPO_PUBLIC_BACKEND_URL,
-//  EXPO_PUBLIC_ALPACA_BASE_URL,
-//} = Constants.expoConfig?.extra || {};
-
-//added code by me to try to fix alpaca crap
-
-const ALPACA_KEY = 'AKP4CYCLABN0QHC7GVH4';
-const ALPACA_SECRET = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
-const ALPACA_BASE_URL = 'https://api.alpaca.markets';
-
-//const ALPACA_BASE_URL = EXPO_PUBLIC_ALPACA_BASE_URL ||
-//  'https://api.alpaca.markets';
-
 // Helper to build Alpaca auth headers from Expo environment variables
 const getAlpacaHeaders = () => ({
-  'APCA-API-KEY-ID': EXPO_PUBLIC_ALPACA_KEY,
-  'APCA-API-SECRET-KEY': EXPO_PUBLIC_ALPACA_SECRET,
+  'APCA-API-KEY-ID': ALPACA_KEY,
+  'APCA-API-SECRET-KEY': ALPACA_SECRET,
   'Content-Type': 'application/json',
 });
 
@@ -65,8 +58,6 @@ const getAlpacaHeaders = () => ({
 // but allow override via Expo env var
 // When running on a real device "localhost" will not resolve to your
 // development machine. Use an Expo or ngrok tunnel URL instead.
-// Backend server for trade requests
-const BACKEND_URL = EXPO_PUBLIC_BACKEND_URL || 'https://borb4.onrender.com';
 
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
