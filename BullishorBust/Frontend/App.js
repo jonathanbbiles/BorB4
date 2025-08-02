@@ -66,7 +66,7 @@ const getAlpacaHeaders = () => ({
 // When running on a real device "localhost" will not resolve to your
 // development machine. Use an Expo or ngrok tunnel URL instead.
 // Backend server for trade requests
-const BACKEND_URL = ALPACA_BASE_URL || 'https://borb4.onrender.com';
+const BACKEND_URL = EXPO_PUBLIC_BACKEND_URL || 'https://borb4.onrender.com';
 
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
