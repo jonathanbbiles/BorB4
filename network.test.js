@@ -1,4 +1,7 @@
-const BASE_URL = process.frontend.env.ALPACA_BASE_URL || 'http://localhost:3000';
+// Default to the live Alpaca endpoint if no environment variable is set.
+// Using the correct base URL avoids accidental requests to localhost which
+// would obviously fail the connectivity test.
+const BASE_URL = process.env.ALPACA_BASE_URL || 'https://api.alpaca.markets';
 (async () => {
   try {
     const ping = await fetch(`${BASE_URL}/ping`);
