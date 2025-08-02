@@ -18,7 +18,10 @@ const {
   ALPACA_DATA_URL: DATA_URL = 'https://data.alpaca.markets/v1beta2',
 } = process.env;
 
-const headers = {
+// Standard Alpaca auth headers used for every API call. Keeping them in a
+// single constant avoids accidentally omitting a required header on some
+// requests which would result in mysterious `AccessDenied` errors.
+const HEADERS = {
   'APCA-API-KEY-ID': API_KEY,
   'APCA-API-SECRET-KEY': SECRET_KEY,
   'Content-Type': 'application/json',
@@ -33,7 +36,10 @@ app.get('/ping', (req, res) => {
 // Verify Alpaca API connectivity and credentials
 app.get('/ping-alpaca', async (req, res) => {
   try {
-    const { data } = await axios.get(`${BASE_URL}/v2/account`, { headers });
+    // Always pass headers via the `headers` key so axios sends them correctly.
+    const { data } = await axios.get(`${BASE_URL}/v2/account`, {
+      headers: HEADERS,
+    });
     res.json({ account_id: data.id, status: data.status });
   } catch (err) {
     const msg = err.response?.data || err.message;
@@ -45,7 +51,9 @@ app.get('/ping-alpaca', async (req, res) => {
 // Expose API status endpoint for frontend validation
 app.get('/api/status', async (req, res) => {
   try {
-    const account = await axios.get(`${BASE_URL}/v2/account`, { headers });
+    const account = await axios.get(`${BASE_URL}/v2/account`, {
+      headers: HEADERS,
+    });
     res.json({ account: account.data });
   } catch (err) {
     res.status(500).json({ error: 'Alpaca credentials invalid' });
