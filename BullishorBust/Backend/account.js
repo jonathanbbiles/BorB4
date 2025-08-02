@@ -9,11 +9,11 @@ const {
   ALPACA_BASE_URL: BASE_URL,
 } = process.env;
 
-const headers = {
-  'APCA-API-KEY-ID': API_KEY,
-  'APCA-API-SECRET-KEY': SECRET_KEY,
-  'Content-Type': 'application/json',
-};
+//const headers = {
+//  'APCA-API-KEY-ID': API_KEY,
+//  'APCA-API-SECRET-KEY': SECRET_KEY,
+//  'Content-Type': 'application/json',
+//};
 
 router.get('/account', async (req, res) => {
   try {
