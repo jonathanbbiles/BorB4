@@ -38,15 +38,21 @@ import {
 // API credentials are expected to be provided via environment variables.
 // If they are missing the app will still run but trading requests will fail.
 // Alpaca base URL remains the paper trading endpoint.
-const {
-  EXPO_PUBLIC_ALPACA_KEY,
-  EXPO_PUBLIC_ALPACA_SECRET,
-  EXPO_PUBLIC_BACKEND_URL,
-  EXPO_PUBLIC_ALPACA_BASE_URL,
-} = Constants.expoConfig?.extra || {};
+//const {
+//  EXPO_PUBLIC_ALPACA_KEY,
+//  EXPO_PUBLIC_ALPACA_SECRET,
+//  EXPO_PUBLIC_BACKEND_URL,
+//  EXPO_PUBLIC_ALPACA_BASE_URL,
+//} = Constants.expoConfig?.extra || {};
 
-const ALPACA_BASE_URL = EXPO_PUBLIC_ALPACA_BASE_URL ||
-  'https://paper-api.alpaca.markets/v2';
+//added code by me to try to fix alpaca crap
+
+const ALPACA_KEY = 'PKN4ICO3WECXSLDGXCHC';
+const ALPACA_SECRET = 'PwJAEwLnLnsf7qAVvFutE8VIMgsAgvi7PMkMcCca';
+const ALPACA_BASE_URL = 'https://paper-api.alpaca.markets/v2';
+
+//const ALPACA_BASE_URL = EXPO_PUBLIC_ALPACA_BASE_URL ||
+//  'https://paper-api.alpaca.markets/v2';
 
 // Helper to build Alpaca auth headers from Expo environment variables
 const getAlpacaHeaders = () => ({
@@ -60,7 +66,7 @@ const getAlpacaHeaders = () => ({
 // When running on a real device "localhost" will not resolve to your
 // development machine. Use an Expo or ngrok tunnel URL instead.
 // Backend server for trade requests
-const BACKEND_URL = EXPO_PUBLIC_BACKEND_URL || 'https://borb4.onrender.com';
+const BACKEND_URL = ALPACA_BASE_URL || 'https://borb4.onrender.com';
 
 // Crypto orders require GTC time in force
 const CRYPTO_TIME_IN_FORCE = 'gtc';
